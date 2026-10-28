@@ -407,7 +407,7 @@ function ChantierForm({ initial = {}, onSave, libelle }) {
       maitre_ouvrage: str(f.get('maitre_ouvrage')), numero_marche: str(f.get('numero_marche')), lieu: str(f.get('lieu')),
       montant_marche: num(f.get('montant_marche')), taux_tva: num(f.get('taux_tva')), taux_retenue: num(f.get('taux_retenue')),
       date_os: str(f.get('date_os')), delai_jours: str(f.get('delai_jours')) ? num(f.get('delai_jours')) : null,
-      jours_arret: num(f.get('jours_arret')), statut: String(f.get('statut')), responsable: str(f.get('responsable')),
+      jours_arret: num(f.get('jours_arret')), statut: String(f.get('statut') || '') || 'Soumission', responsable: str(f.get('responsable')),
     });
     setAttente(false);
   }
@@ -417,8 +417,8 @@ function ChantierForm({ initial = {}, onSave, libelle }) {
       <${Champ} id="intitule" label="Intitulé du chantier" large><input id="intitule" name="intitule" required value=${i.intitule ?? ''} /></${Champ}>
       <${Champ} id="societe_id" label="Société">
         <select id="societe_id" name="societe_id" required key=${societes.rows.length} value=${i.societe_id ?? ''}>
-          <option value="" disabled>Choisir…</option>
-          ${societes.rows.map((s) => html`<option value=${s.id}>${s.nom}</option>`)}
+          <option value="" disabled selected=${!i.societe_id}>Choisir…</option>
+          ${societes.rows.map((s) => html`<option value=${s.id} selected=${s.id === i.societe_id}>${s.nom}</option>`)}
         </select>
       </${Champ}>
       <${Champ} id="maitre_ouvrage" label="Maître d'ouvrage"><input id="maitre_ouvrage" name="maitre_ouvrage" value=${i.maitre_ouvrage ?? ''} /></${Champ}>
@@ -428,7 +428,7 @@ function ChantierForm({ initial = {}, onSave, libelle }) {
       <${Champ} id="montant_marche" label="Montant du marché TTC (DH)"><input id="montant_marche" name="montant_marche" inputmode="decimal" required value=${i.montant_marche ?? ''} /></${Champ}>
       <${Champ} id="taux_tva" label="TVA (%)"><input id="taux_tva" name="taux_tva" inputmode="decimal" value=${i.taux_tva ?? 20} /></${Champ}>
       <${Champ} id="taux_retenue" label="Retenue de garantie (%)"><input id="taux_retenue" name="taux_retenue" inputmode="decimal" value=${i.taux_retenue ?? 7} /></${Champ}>
-      <${Champ} id="statut" label="Statut"><select id="statut" name="statut" value=${i.statut ?? 'Soumission'}>${STATUTS_CHANTIER.map((s) => html`<option>${s}</option>`)}</select></${Champ}>
+      <${Champ} id="statut" label="Statut"><select id="statut" name="statut" value=${i.statut ?? 'Soumission'}>${STATUTS_CHANTIER.map((s) => html`<option value=${s} selected=${s === (i.statut ?? 'Soumission')}>${s}</option>`)}</select></${Champ}>
       <${Champ} id="date_os" label="Date de l'ordre de service"><input id="date_os" name="date_os" type="date" value=${i.date_os ?? ''} /></${Champ}>
       <${Champ} id="delai_jours" label="Délai d'exécution (jours)"><input id="delai_jours" name="delai_jours" inputmode="numeric" value=${i.delai_jours ?? ''} /></${Champ}>
       <${Champ} id="jours_arret" label="Jours d'arrêt (OS d'arrêt)"><input id="jours_arret" name="jours_arret" inputmode="numeric" value=${i.jours_arret ?? 0} /></${Champ}>
@@ -722,7 +722,7 @@ function Depenses({ chantierId, rows, fournisseurs, reload }) {
       <div class="tete"><h2>Ajouter une dépense</h2></div>
       <div class="corps">
         <form class="formulaire" onSubmit=${ajouter}>
-          <${Champ} id="e-c" label="Catégorie"><select id="e-c" name="categorie">${CATEGORIES_DEPENSE.map((c) => html`<option>${c}</option>`)}</select></${Champ}>
+          <${Champ} id="e-c" label="Catégorie"><select id="e-c" name="categorie">${CATEGORIES_DEPENSE.map((c) => html`<option value=${c}>${c}</option>`)}</select></${Champ}>
           <${Champ} id="e-l" label="Libellé" large><input id="e-l" name="libelle" required placeholder="Ex. Gravette 15/25, 120 m³" /></${Champ}>
           <${Champ} id="e-f" label="Fournisseur"><select id="e-f" name="fournisseur_id"><option value="">—</option>${fournisseurs.map((f) => html`<option value=${f.id}>${f.nom}</option>`)}</select></${Champ}>
           <${Champ} id="e-n" label="N° facture / bon"><input id="e-n" name="numero_facture" /></${Champ}>
@@ -776,7 +776,7 @@ function Cautions({ c, rows, reload }) {
             <tr key=${x.id}>
               <td class="fort">${x.type}</td><td>${x.banque}</td><td class="discret">${x.numero}</td><td class="d fort">${dh(x.montant)}</td><td class="d">${dh(x.frais)}</td>
               <td>${dateFr(x.date_emission)}</td><td>${dateFr(x.date_echeance)}</td>
-              <td style=${{ width: '150px' }}><select aria-label=${'Statut caution ' + x.type} value=${x.statut} onChange=${async (e) => { if (await ecrire(sb.from('cautions').update({ statut: e.target.value }).eq('id', x.id))) await reload(); }}>${STATUTS_CAUTION.map((s) => html`<option>${s}</option>`)}</select></td>
+              <td style=${{ width: '150px' }}><select aria-label=${'Statut caution ' + x.type} value=${x.statut} onChange=${async (e) => { if (await ecrire(sb.from('cautions').update({ statut: e.target.value }).eq('id', x.id))) await reload(); }}>${STATUTS_CAUTION.map((s) => html`<option value=${s} selected=${s === x.statut}>${s}</option>`)}</select></td>
               <td><${BtnSuppr} label=${'caution ' + x.type} onClick=${() => supprimer('cautions', x.id, 'Supprimer cette caution ?', reload)} /></td>
             </tr>`)}</tbody>
         </table>
@@ -784,7 +784,7 @@ function Cautions({ c, rows, reload }) {
       </div>
       <div class="corps" style=${{ borderTop: '1px solid var(--bord)' }}>
         <form class="formulaire" onSubmit=${ajouter}>
-          <${Champ} id="c-t" label="Type"><select id="c-t" name="type">${TYPES_CAUTION.map((t) => html`<option>${t}</option>`)}</select></${Champ}>
+          <${Champ} id="c-t" label="Type"><select id="c-t" name="type">${TYPES_CAUTION.map((t) => html`<option value=${t}>${t}</option>`)}</select></${Champ}>
           <${Champ} id="c-b" label="Banque"><input id="c-b" name="banque" /></${Champ}>
           <${Champ} id="c-n" label="N° de caution"><input id="c-n" name="numero" /></${Champ}>
           <${Champ} id="c-m" label="Montant (DH)"><input id="c-m" name="montant" inputmode="decimal" required /></${Champ}>
@@ -929,7 +929,7 @@ function Tresorerie() {
               <td class="fort">${q.numero}</td><td>${q.beneficiaire ?? nomF(q.fournisseur_id) ?? '—'}</td><td>${nomC(q.chantier_id)}</td><td>${q.banque}</td><td>${dateFr(q.date_emission)}</td>
               <td style=${proche ? { color: 'var(--alerte)', fontWeight: 600 } : null}>${dateFr(q.date_echeance)}${proche ? (q.date_echeance < t ? ' · dépassée' : ' · cette semaine') : ''}</td>
               <td class="d fort">${dh(q.montant)}</td>
-              <td style=${{ width: '140px' }}><select aria-label=${'Statut chèque ' + q.numero} value=${q.statut} onChange=${async (e) => { if (await ecrire(sb.from('cheques').update({ statut: e.target.value }).eq('id', q.id))) await cheques.reload(); }}>${STATUTS_CHEQUE.map((s) => html`<option>${s}</option>`)}</select></td>
+              <td style=${{ width: '140px' }}><select aria-label=${'Statut chèque ' + q.numero} value=${q.statut} onChange=${async (e) => { if (await ecrire(sb.from('cheques').update({ statut: e.target.value }).eq('id', q.id))) await cheques.reload(); }}>${STATUTS_CHEQUE.map((s) => html`<option value=${s} selected=${s === q.statut}>${s}</option>`)}</select></td>
               <td><${BtnSuppr} label=${'chèque ' + q.numero} onClick=${() => supprimer('cheques', q.id, 'Supprimer ce chèque ?', cheques.reload)} /></td>
             </tr>`; })}</tbody>
         </table>
