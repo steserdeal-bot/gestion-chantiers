@@ -1,0 +1,1007 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gestion de chantiers</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script>
+  // ============================================================
+  //  À REMPLIR : valeurs de Supabase › Project Settings › API
+  //  (la clé « anon / publishable » est prévue pour être publique ;
+  //   les données restent protégées par la connexion)
+  // ============================================================
+  window.SUPABASE_URL = 'https://VOTRE-PROJET.supabase.co';
+  window.SUPABASE_ANON_KEY = 'VOTRE-CLE-PUBLIQUE';
+</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+:root {
+  --fond: #F6F7FB; --surface: #FFFFFF; --bord: #E5E7EB; --bord-leger: #EDF0F3;
+  --texte: #111827; --texte-2: #5B6673;
+  --accent: #0F766E; --accent-clair: #E6F4F1;
+  --progres: #4F46E5; --progres-clair: #E0E7FF;
+  --risque: #B42318; --risque-clair: #FDE7E5;
+  --alerte: #7A4F00; --alerte-clair: #FCEFD9;
+  --ok: #17613A; --ok-clair: #E2F2E8;
+  --info: #3730A3; --info-clair: #EEF2FF;
+  --rayon: 16px;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--fond); color: var(--texte); }
+body { font-family: 'DM Sans', system-ui, sans-serif; font-size: 14px; font-variant-numeric: tabular-nums; }
+a { color: var(--progres); }
+h1 { margin: 0; font-size: 26px; font-weight: 700; }
+h2 { margin: 0; font-size: 17px; font-weight: 600; }
+.app { display: flex; flex-wrap: wrap; min-height: 100vh; }
+.menu { flex: 1 1 220px; max-width: 100%; background: var(--surface); border-right: 1px solid var(--bord); padding: 24px 16px; display: flex; flex-direction: column; gap: 4px; }
+.menu .logo { display: flex; align-items: center; gap: 10px; padding: 0 8px 20px; font-weight: 700; font-size: 17px; }
+.menu a { display: flex; align-items: center; min-height: 44px; padding: 0 12px; border-radius: 8px; color: #4B5563; text-decoration: none; }
+.menu a.actif { background: var(--accent-clair); color: var(--accent); font-weight: 600; }
+.menu .bas { margin-top: auto; padding: 12px; font-size: 12.5px; color: var(--texte-2); display: flex; flex-direction: column; gap: 8px; }
+.contenu { flex: 999 1 560px; min-width: 0; padding: 32px; display: flex; flex-direction: column; gap: 24px; }
+@media (max-width: 700px) { .contenu { padding: 16px; } .menu { flex-direction: row; flex-wrap: wrap; padding: 12px; } .menu .logo { width: 100%; padding-bottom: 8px; } .menu .bas { margin: 0; } }
+.entete { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 16px; }
+.sous-titre { font-size: 13.5px; color: var(--texte-2); margin-top: 6px; }
+.rangee { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.btn { min-height: 40px; padding: 0 16px; border-radius: 999px; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; border: 1px solid var(--accent); background: var(--accent); color: #fff; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
+.btn.secondaire { background: var(--surface); color: var(--texte); border-color: #C9D1DA; border-radius: 8px; }
+.btn.petit { min-height: 32px; padding: 0 10px; font-size: 13px; }
+.btn.danger { background: var(--surface); color: var(--risque); border-color: #F4C7C2; border-radius: 8px; }
+.btn:disabled { opacity: .6; cursor: default; }
+.pilule { min-height: 36px; padding: 0 14px; border-radius: 999px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; background: var(--surface); color: var(--texte); border: 1px solid #C9D1DA; }
+.pilule[aria-pressed="true"] { background: var(--texte); color: #fff; border-color: var(--texte); }
+.tuiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 16px; }
+.tuile { background: var(--surface); border: 1px solid var(--bord); border-radius: var(--rayon); padding: 18px 20px; }
+.tuile .l { font-size: 13px; color: var(--texte-2); }
+.tuile .v { font-size: 24px; font-weight: 700; margin-top: 6px; }
+.tuile .s { font-size: 12.5px; color: var(--texte-2); margin-top: 4px; }
+.carte { background: var(--surface); border: 1px solid var(--bord); border-radius: var(--rayon); }
+.carte > .tete { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 16px 20px; border-bottom: 1px solid var(--bord); }
+.carte > .corps { padding: 20px; }
+.grille2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; }
+.defile { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+th { text-align: left; color: var(--texte-2); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; font-weight: 600; padding: 12px; white-space: nowrap; }
+td { padding: 12px; border-top: 1px solid var(--bord-leger); vertical-align: middle; }
+th:first-child, td:first-child { padding-left: 20px; }
+th:last-child, td:last-child { padding-right: 20px; }
+.d { text-align: right; }
+.fort { font-weight: 600; }
+.discret { color: var(--texte-2); font-size: 12.5px; }
+.vide { padding: 32px 20px; text-align: center; color: var(--texte-2); }
+.badge { display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.b-info { background: var(--info-clair); color: var(--info); }
+.b-ok { background: var(--ok-clair); color: var(--ok); }
+.b-alerte { background: var(--alerte-clair); color: var(--alerte); }
+.b-risque { background: var(--risque-clair); color: var(--risque); }
+.b-neutre { background: #EDF0F3; color: #3D4753; }
+.barre { height: 6px; background: #E6EAEF; border-radius: 3px; flex: 1; min-width: 60px; }
+.barre > div { height: 100%; border-radius: 3px; }
+.barre.grande { height: 10px; border-radius: 5px; }
+.ligne-barre { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.ligne-barre + .ligne-barre { margin-top: 6px; }
+.ligne-barre > span:first-child { width: 86px; color: var(--texte-2); }
+.onglets { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid var(--bord); }
+.onglets button { min-height: 44px; padding: 0 14px; font: inherit; font-size: 14px; background: none; border: none; border-bottom: 3px solid transparent; color: var(--texte-2); cursor: pointer; }
+.onglets button[aria-selected="true"] { border-bottom-color: var(--accent); color: var(--texte); font-weight: 600; }
+form.formulaire { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; align-items: end; }
+.champ { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.champ label { color: var(--texte-2); font-weight: 500; }
+.large { grid-column: span 2; }
+@media (max-width: 480px) { .large { grid-column: auto; } }
+input, select { font: inherit; font-size: 14px; min-height: 40px; padding: 8px 10px; border: 1px solid #C9D1DA; border-radius: 8px; background: #fff; color: var(--texte); width: 100%; }
+input[type=checkbox] { width: 18px; min-height: 18px; }
+input:focus, select:focus, button:focus-visible, a:focus-visible { outline: 2px solid var(--progres); outline-offset: 1px; }
+td input, td select { min-height: 34px; padding: 4px 8px; }
+.erreur { background: var(--risque-clair); color: var(--risque); padding: 12px 16px; border-radius: 8px; }
+.note { background: var(--info-clair); color: var(--info); padding: 12px 16px; border-radius: 8px; }
+.alertes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.alertes li { display: flex; gap: 10px; }
+.point { flex: none; width: 8px; height: 8px; margin-top: 6px; border-radius: 4px; }
+.ligne-liste { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--bord-leger); }
+.gantt { min-width: 900px; position: relative; }
+.gantt .rang { display: grid; grid-template-columns: 280px minmax(0, 1fr); min-height: 52px; border-bottom: 1px solid #F0F2F5; }
+.gantt .nom { padding: 8px 20px; display: flex; flex-direction: column; justify-content: center; gap: 2px; border-right: 1px solid var(--bord); background: #fff; position: relative; z-index: 1; }
+.gantt .piste { position: relative; }
+.gantt .calque { position: absolute; top: 44px; bottom: 0; left: 280px; right: 0; pointer-events: none; }
+.gantt .bar { position: absolute; top: 15px; height: 22px; border-radius: 5px; overflow: hidden; }
+</style>
+</head>
+<body>
+<div id="app"><div class="contenu discret">Chargement…</div></div>
+
+<script type="module">
+import { html, render, useState, useEffect, useCallback, useMemo, useRef } from 'https://unpkg.com/htm@3.1.1/preact/standalone.module.js';
+
+// ---------- Connexion à Supabase ----------
+const CONFIG_OK = !/VOTRE-PROJET|VOTRE-CLE/.test(window.SUPABASE_URL + window.SUPABASE_ANON_KEY);
+const sb = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
+
+// ---------- Listes ----------
+const STATUTS_CHANTIER = ['Soumission', 'Attribué', 'En cours', 'Arrêté', 'Réception provisoire', 'Clôturé'];
+const TYPES_CAUTION = ['Provisoire', 'Définitive', 'Retenue de garantie', 'Avance'];
+const STATUTS_CAUTION = ['Active', 'À restituer', 'Restituée'];
+const CATEGORIES_DEPENSE = ['Achats matériaux', "Main d'œuvre", 'Transport', 'Sous-traitance', 'Location engins', 'Dépenses diverses'];
+const STATUTS_CHEQUE = ['Émis', 'Encaissé', 'Rejeté', 'Annulé'];
+const MOIS = ['Janv', 'Févr', 'Mars', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sept', 'Oct', 'Nov', 'Déc'];
+
+// ---------- Format ----------
+const dh = (n) => Math.round(Number(n ?? 0)).toLocaleString('fr-FR');
+const mdh = (n) => (n / 1e6).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' M';
+const dateFr = (d) => d ? `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}` : '—';
+const today = () => new Date().toISOString().slice(0, 10);
+const addDays = (d, n) => { const t = new Date(d + 'T00:00:00Z'); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); };
+const daysBetween = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 864e5);
+const num = (v) => { const n = Number(String(v ?? '').replace(/[\s  ]/g, '').replace(',', '.')); return Number.isFinite(n) ? n : 0; };
+const str = (v) => { const s = String(v ?? '').trim(); return s === '' ? null : s; };
+const nb = (x) => Number(x ?? 0);
+
+// ---------- Calculs ----------
+function avancementPhysique(bpu, taches) {
+  const total = bpu.reduce((a, b) => a + nb(b.quantite) * nb(b.prix_unitaire), 0);
+  if (total > 0) return (bpu.reduce((a, b) => a + Math.min(nb(b.quantite_realisee), nb(b.quantite)) * nb(b.prix_unitaire), 0) / total) * 100;
+  if (taches.length) return taches.reduce((a, t) => a + nb(t.avancement), 0) / taches.length;
+  return 0;
+}
+const dateFinPrevue = (c) => (c.date_os && c.delai_jours ? addDays(c.date_os, nb(c.delai_jours) + nb(c.jours_arret)) : null);
+
+function indicateurs(c, d) {
+  const budget = nb(c.montant_marche);
+  const facture = d.decomptes.reduce((a, x) => a + nb(x.montant_ttc), 0);
+  const retenue = nb(c.taux_retenue) / 100;
+  const encaisse = d.decomptes.filter((x) => x.encaisse).reduce((a, x) => a + nb(x.montant_ttc) * (1 - retenue), 0);
+  const fraisCautions = d.cautions.reduce((a, x) => a + nb(x.frais), 0);
+  const charges = d.depenses.reduce((a, x) => a + nb(x.montant_ttc), 0) + fraisCautions;
+  const paye = d.depenses.reduce((a, x) => a + nb(x.montant_paye), 0) + fraisCautions;
+  const avancement = avancementPhysique(d.bpu, d.taches);
+  const consommation = budget > 0 ? (charges / budget) * 100 : 0;
+  const dateFin = dateFinPrevue(c);
+  let delaiEcoulePct = null, joursRestants = null;
+  const enCours = c.statut === 'En cours' || c.statut === 'Arrêté';
+  if (c.date_os && c.delai_jours && enCours) {
+    const ecoule = Math.max(0, daysBetween(c.date_os, today()) - nb(c.jours_arret));
+    delaiEcoulePct = (ecoule / nb(c.delai_jours)) * 100;
+    joursRestants = nb(c.delai_jours) - ecoule;
+  }
+  const raisons = [];
+  if (enCours && consommation > avancement + 10) raisons.push(`${Math.round(consommation)} % du budget consommé pour ${Math.round(avancement)} % des travaux`);
+  if (delaiEcoulePct !== null && delaiEcoulePct > avancement + 10) raisons.push(`${Math.round(delaiEcoulePct)} % du délai écoulé pour ${Math.round(avancement)} % des travaux`);
+  if (joursRestants !== null && joursRestants < 0) raisons.push(`délai dépassé de ${-joursRestants} jours`);
+  return {
+    budget, facture, encaisse, resteAFacturer: budget - facture, charges, paye, marge: facture - charges,
+    margePct: facture > 0 ? ((facture - charges) / facture) * 100 : null, consommation, avancement,
+    delaiEcoulePct, joursRestants, dateFin,
+    cautionsActives: d.cautions.filter((x) => x.statut !== 'Restituée').reduce((a, x) => a + nb(x.montant), 0),
+    tachesRestantes: d.taches.filter((t) => nb(t.avancement) < 100).length, tachesTotal: d.taches.length,
+    aRisque: raisons.length > 0, raisons,
+  };
+}
+
+// ---------- Accès aux données ----------
+function useTable(table, filtre, ordre) {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const fcol = filtre?.col, fval = filtre?.val, ocol = ordre?.col, oasc = ordre?.asc ?? true;
+  const reload = useCallback(async () => {
+    let q = sb.from(table).select('*');
+    if (fcol && fval) q = q.eq(fcol, fval);
+    if (ocol) q = q.order(ocol, { ascending: oasc });
+    const { data, error } = await q;
+    setError(error ? error.message : null);
+    setRows(data ?? []);
+    setLoading(false);
+  }, [table, fcol, fval, ocol, oasc]);
+  useEffect(() => { reload(); }, [reload]);
+  return { rows, loading, error, reload };
+}
+async function ecrire(p) {
+  const { error } = await p;
+  if (error) { alert('Erreur : ' + error.message); return false; }
+  return true;
+}
+const supprimer = async (table, id, question, reload) => {
+  if (confirm(question) && await ecrire(sb.from(table).delete().eq('id', id))) await reload();
+};
+
+// ---------- Navigation (adresse après #) ----------
+function useRoute() {
+  const [h, setH] = useState(location.hash.slice(1) || '/');
+  useEffect(() => { const f = () => setH(location.hash.slice(1) || '/'); addEventListener('hashchange', f); return () => removeEventListener('hashchange', f); }, []);
+  return h;
+}
+const aller = (r) => { location.hash = r; };
+
+// ---------- Petits composants ----------
+const CLS = { 'Soumission': 'b-neutre', 'Attribué': 'b-alerte', 'En cours': 'b-info', 'Arrêté': 'b-alerte', 'Réception provisoire': 'b-ok', 'Clôturé': 'b-neutre', 'Active': 'b-info', 'À restituer': 'b-alerte', 'Restituée': 'b-ok', 'Émis': 'b-info', 'Encaissé': 'b-ok', 'Rejeté': 'b-risque', 'Annulé': 'b-neutre' };
+const Badge = ({ statut, risque }) => risque ? html`<span class="badge b-risque">À risque</span>` : html`<span class=${'badge ' + (CLS[statut] ?? 'b-neutre')}>${statut}</span>`;
+const Barre = ({ valeur, couleur, grande }) => html`<div class=${'barre' + (grande ? ' grande' : '')}><div style=${{ width: Math.max(0, Math.min(100, valeur)) + '%', background: couleur }}></div></div>`;
+const Tuile = ({ l, v, s, couleur }) => html`<div class="tuile"><div class="l">${l}</div><div class="v" style=${couleur ? { color: couleur } : null}>${v}</div><div class="s">${s}</div></div>`;
+const BtnSuppr = ({ onClick, label }) => html`<button type="button" class="btn danger petit" aria-label=${'Supprimer ' + label} onClick=${onClick}>×</button>`;
+const Champ = ({ id, label, large, children }) => html`<div class=${'champ' + (large ? ' large' : '')}><label for=${id}>${label}</label>${children}</div>`;
+const lireForm = (e) => { e.preventDefault(); return new FormData(e.currentTarget); };
+
+// ---------- Connexion ----------
+function Login() {
+  const [mode, setMode] = useState('connexion');
+  const [erreur, setErreur] = useState(null);
+  const [info, setInfo] = useState(null);
+  const [attente, setAttente] = useState(false);
+  async function envoyer(e) {
+    const f = lireForm(e);
+    setErreur(null); setInfo(null); setAttente(true);
+    const email = String(f.get('email')), password = String(f.get('password'));
+    const res = mode === 'connexion' ? await sb.auth.signInWithPassword({ email, password }) : await sb.auth.signUp({ email, password });
+    setAttente(false);
+    if (res.error) return setErreur(res.error.message);
+    if (mode === 'inscription' && !res.data.session) setInfo('Compte créé. Confirmez votre adresse via l’email reçu, puis connectez-vous.');
+  }
+  return html`
+    <div style=${{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: '16px' }}>
+      <div class="carte" style=${{ width: '100%', maxWidth: '400px' }}>
+        <div class="corps" style=${{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <h1 style=${{ fontSize: '22px' }}>${mode === 'connexion' ? 'Connexion' : 'Créer un compte'}</h1>
+          <div class="discret">Gestion de chantiers Cédil & ADPAP</div>
+          ${erreur && html`<div class="erreur">${erreur}</div>`}
+          ${info && html`<div class="note">${info}</div>`}
+          <form onSubmit=${envoyer} style=${{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <${Champ} id="email" label="Email"><input id="email" name="email" type="email" required autocomplete="email" /></${Champ}>
+            <${Champ} id="password" label="Mot de passe"><input id="password" name="password" type="password" required minlength="6" /></${Champ}>
+            <button class="btn" type="submit" disabled=${attente} style=${{ justifyContent: 'center' }}>${attente ? 'Patientez…' : mode === 'connexion' ? 'Se connecter' : 'Créer le compte'}</button>
+          </form>
+          <button type="button" class="btn secondaire" style=${{ justifyContent: 'center' }} onClick=${() => setMode(mode === 'connexion' ? 'inscription' : 'connexion')}>
+            ${mode === 'connexion' ? 'Pas encore de compte ? Créer un compte' : 'Déjà un compte ? Se connecter'}
+          </button>
+        </div>
+      </div>
+    </div>`;
+}
+
+// ---------- Cadre (menu) ----------
+function Cadre({ route, email, children }) {
+  const liens = [['/', 'Tableau de bord'], ['/nouveau', 'Nouveau chantier'], ['/tresorerie', 'Chèques et paiements'], ['/fournisseurs', 'Fournisseurs']];
+  const actif = (r) => r === '/' ? (route === '/' || route.startsWith('/chantier/')) : route === r;
+  return html`
+    <div class="app">
+      <nav class="menu" aria-label="Menu principal">
+        <div class="logo">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#0F766E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 20h20"/><path d="M5 20V9l7-5 7 5v11"/><path d="M9 20v-6h6v6"/></svg>
+          Chantiers
+        </div>
+        ${liens.map(([r, l]) => html`<a href=${'#' + r} class=${actif(r) ? 'actif' : ''}>${l}</a>`)}
+        <div class="bas">
+          <span>${email}</span>
+          <button class="btn secondaire petit" type="button" onClick=${() => sb.auth.signOut()}>Se déconnecter</button>
+        </div>
+      </nav>
+      <main class="contenu">${children}</main>
+    </div>`;
+}
+
+// ---------- Tableau de bord ----------
+function TableauDeBord() {
+  const societes = useTable('societes', null, { col: 'nom' });
+  const chantiers = useTable('chantiers', null, { col: 'created_at', asc: false });
+  const cautions = useTable('cautions');
+  const bpu = useTable('articles_bpu');
+  const decomptes = useTable('decomptes');
+  const depenses = useTable('depenses');
+  const taches = useTable('taches');
+  const cheques = useTable('cheques');
+  const [filtre, setFiltre] = useState('toutes');
+
+  const lignes = useMemo(() => {
+    const par = (rows, id) => rows.filter((r) => r.chantier_id === id);
+    return chantiers.rows.filter((c) => filtre === 'toutes' || c.societe_id === filtre).map((c) => ({
+      c, k: indicateurs(c, { cautions: par(cautions.rows, c.id), bpu: par(bpu.rows, c.id), decomptes: par(decomptes.rows, c.id), depenses: par(depenses.rows, c.id), taches: par(taches.rows, c.id) }),
+    }));
+  }, [chantiers.rows, cautions.rows, bpu.rows, decomptes.rows, depenses.rows, taches.rows, filtre]);
+
+  const ids = new Set(lignes.map((l) => l.c.id));
+  const somme = (f) => lignes.reduce((a, l) => a + f(l.k), 0);
+  const budget = somme((k) => k.budget), charges = somme((k) => k.charges), facture = somme((k) => k.facture);
+  const actifs = lignes.filter((l) => !['Clôturé', 'Réception provisoire'].includes(l.c.statut)).length;
+  const nomSociete = (id) => societes.rows.find((s) => s.id === id)?.nom ?? '';
+  const intitule = (id) => chantiers.rows.find((c) => c.id === id)?.intitule ?? '';
+
+  const t = today(), dans7 = addDays(t, 7), dans30 = addDays(t, 30);
+  const alertes = [];
+  lignes.forEach((l) => l.k.raisons.forEach((r) => alertes.push({ texte: `${l.c.intitule} : ${r}.`, grave: true })));
+  cautions.rows.filter((x) => ids.has(x.chantier_id) && x.statut !== 'Restituée' && x.date_echeance && x.date_echeance <= dans30)
+    .forEach((x) => alertes.push({ texte: `Caution ${x.type.toLowerCase()} ${intitule(x.chantier_id)} : échéance le ${dateFr(x.date_echeance)}.` }));
+  cautions.rows.filter((x) => ids.has(x.chantier_id) && x.statut === 'À restituer')
+    .forEach((x) => alertes.push({ texte: `Caution ${x.type.toLowerCase()} ${intitule(x.chantier_id)} à récupérer auprès du maître d'ouvrage.` }));
+  const aProv = cheques.rows.filter((q) => q.statut === 'Émis' && q.date_echeance && q.date_echeance <= dans7);
+  if (aProv.length) alertes.push({ texte: `${aProv.length} chèque(s) à échéance sous 7 jours : ${dh(aProv.reduce((a, q) => a + nb(q.montant), 0))} DH à provisionner.` });
+
+  const ech = [];
+  cheques.rows.filter((q) => q.statut === 'Émis' && q.date_echeance && q.date_echeance >= addDays(t, -30))
+    .forEach((q) => ech.push({ date: q.date_echeance, texte: `Chèque n° ${q.numero}${q.beneficiaire ? ' · ' + q.beneficiaire : ''}`, detail: dh(q.montant) + ' DH' }));
+  cautions.rows.filter((x) => ids.has(x.chantier_id) && x.statut !== 'Restituée' && x.date_echeance && x.date_echeance >= t)
+    .forEach((x) => ech.push({ date: x.date_echeance, texte: `Caution ${x.type.toLowerCase()} · ${intitule(x.chantier_id)}`, detail: 'expire' }));
+  lignes.filter((l) => l.c.statut === 'En cours' && l.k.dateFin && daysBetween(t, l.k.dateFin) <= 60)
+    .forEach((l) => ech.push({ date: l.k.dateFin, texte: `Fin contractuelle · ${l.c.intitule}`, detail: '' }));
+  ech.sort((a, b) => a.date.localeCompare(b.date));
+
+  return html`
+    <div class="entete">
+      <div>
+        <div class="discret">${new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</div>
+        <h1 style=${{ marginTop: '4px' }}>Tableau de bord des chantiers</h1>
+      </div>
+      <div class="rangee" role="group" aria-label="Filtrer par société">
+        <button type="button" class="pilule" aria-pressed=${String(filtre === 'toutes')} onClick=${() => setFiltre('toutes')}>Toutes</button>
+        ${societes.rows.map((s) => html`<button key=${s.id} type="button" class="pilule" aria-pressed=${String(filtre === s.id)} onClick=${() => setFiltre(s.id)}>${s.nom}</button>`)}
+      </div>
+    </div>
+    ${(chantiers.error || societes.error) && html`<div class="erreur">Impossible de lire la base : ${chantiers.error || societes.error}. Avez-vous exécuté le fichier SQL dans Supabase ?</div>`}
+    <div class="tuiles">
+      <${Tuile} l="Chantiers actifs" v=${actifs} s=${lignes.filter((l) => l.k.aRisque).length + ' à risque'} />
+      <${Tuile} l="Budget total des marchés" v=${mdh(budget)} s="DH TTC" />
+      <${Tuile} l="Charges engagées" v=${mdh(charges)} s=${(budget ? Math.round((charges / budget) * 100) : 0) + ' % du budget'} />
+      <${Tuile} l="Facturé au maître d'ouvrage" v=${mdh(facture)} s=${'Reste à facturer : ' + mdh(budget - facture) + ' DH'} />
+      <${Tuile} l="Cautions immobilisées" v=${dh(somme((k) => k.cautionsActives))} s="DH, toutes banques" />
+    </div>
+    <section class="carte">
+      <div class="tete"><h2>Tous les chantiers</h2><a href="#/nouveau" class="btn">+ Nouveau chantier</a></div>
+      <div class="defile">
+        <table style=${{ minWidth: '1040px' }}>
+          <thead><tr><th>Chantier</th><th>Société</th><th class="d">Budget (DH)</th><th class="d">Charges (DH)</th><th style=${{ width: '210px' }}>Avancement / budget</th><th>Délai</th><th class="d">Tâches</th><th>Statut</th></tr></thead>
+          <tbody>
+            ${lignes.map(({ c, k }) => html`
+              <tr key=${c.id}>
+                <td><a href=${'#/chantier/' + c.id} class="fort" style=${{ color: 'var(--texte)', textDecoration: 'none' }}>${c.intitule}</a><div class="discret">${c.code}${c.maitre_ouvrage ? ' · ' + c.maitre_ouvrage : ''}</div></td>
+                <td>${nomSociete(c.societe_id)}</td>
+                <td class="d">${dh(k.budget)}</td>
+                <td class="d">${dh(k.charges)}</td>
+                <td>
+                  <div class="ligne-barre"><span>Travaux ${Math.round(k.avancement)} %</span><${Barre} valeur=${k.avancement} couleur="var(--progres)" /></div>
+                  <div class="ligne-barre"><span>Budget ${Math.round(k.consommation)} %</span><${Barre} valeur=${k.consommation} couleur=${k.consommation > k.avancement + 10 ? 'var(--risque)' : 'var(--accent)'} /></div>
+                </td>
+                <td>${k.joursRestants !== null ? html`
+                  <div class="fort" style=${{ color: (k.delaiEcoulePct ?? 0) > k.avancement + 10 ? 'var(--risque)' : null }}>${k.joursRestants >= 0 ? k.joursRestants + ' j restants' : -k.joursRestants + ' j de retard'}</div>
+                  <div class="discret">${Math.round(k.delaiEcoulePct)} % du délai écoulé</div>` : html`
+                  <div class="fort">${c.delai_jours ? c.delai_jours + ' jours' : '—'}</div>
+                  <div class="discret">${c.date_os ? 'Fin : ' + dateFr(k.dateFin) : "Démarre à l'ordre de service"}</div>`}
+                </td>
+                <td class="d">${k.tachesTotal ? `${k.tachesTotal - k.tachesRestantes} / ${k.tachesTotal}` : '—'}</td>
+                <td><${Badge} statut=${c.statut} risque=${k.aRisque} /></td>
+              </tr>`)}
+          </tbody>
+        </table>
+        ${chantiers.loading ? html`<div class="vide">Chargement…</div>` : lignes.length === 0 && html`<div class="vide">Aucun chantier pour l'instant. Créez le premier avec « Nouveau chantier ».</div>`}
+      </div>
+    </section>
+    <div class="grille2">
+      <section class="carte">
+        <div class="tete"><h2>Alertes</h2></div>
+        <div class="corps">${alertes.length === 0 ? html`<div class="discret">Aucune alerte.</div>` : html`
+          <ul class="alertes">${alertes.map((a) => html`<li><span class="point" style=${{ background: a.grave ? 'var(--risque)' : '#C27A00' }}></span><span>${a.texte}</span></li>`)}</ul>`}
+        </div>
+      </section>
+      <section class="carte">
+        <div class="tete"><h2>Prochaines échéances</h2><a href="#/tresorerie" class="discret">Voir les chèques</a></div>
+        <div class="corps">${ech.length === 0 ? html`<div class="discret">Rien de prévu.</div>` :
+          ech.slice(0, 8).map((i) => html`<div class="ligne-liste"><span>${i.texte}</span><span class="discret" style=${{ whiteSpace: 'nowrap' }}>${dateFr(i.date).slice(0, 5)}${i.detail ? ' · ' + i.detail : ''}</span></div>`)}
+        </div>
+      </section>
+    </div>`;
+}
+
+// ---------- Formulaire chantier ----------
+function ChantierForm({ initial = {}, onSave, libelle }) {
+  const societes = useTable('societes', null, { col: 'nom' });
+  const [attente, setAttente] = useState(false);
+  const i = initial;
+  async function envoyer(e) {
+    const f = lireForm(e);
+    setAttente(true);
+    await onSave({
+      code: String(f.get('code')).trim(), intitule: String(f.get('intitule')).trim(), societe_id: String(f.get('societe_id')),
+      maitre_ouvrage: str(f.get('maitre_ouvrage')), numero_marche: str(f.get('numero_marche')), lieu: str(f.get('lieu')),
+      montant_marche: num(f.get('montant_marche')), taux_tva: num(f.get('taux_tva')), taux_retenue: num(f.get('taux_retenue')),
+      date_os: str(f.get('date_os')), delai_jours: str(f.get('delai_jours')) ? num(f.get('delai_jours')) : null,
+      jours_arret: num(f.get('jours_arret')), statut: String(f.get('statut')), responsable: str(f.get('responsable')),
+    });
+    setAttente(false);
+  }
+  return html`
+    <form class="formulaire" onSubmit=${envoyer}>
+      <${Champ} id="code" label="Code"><input id="code" name="code" required value=${i.code ?? ''} placeholder="CH-26-001" /></${Champ}>
+      <${Champ} id="intitule" label="Intitulé du chantier" large><input id="intitule" name="intitule" required value=${i.intitule ?? ''} /></${Champ}>
+      <${Champ} id="societe_id" label="Société">
+        <select id="societe_id" name="societe_id" required key=${societes.rows.length} value=${i.societe_id ?? ''}>
+          <option value="" disabled>Choisir…</option>
+          ${societes.rows.map((s) => html`<option value=${s.id}>${s.nom}</option>`)}
+        </select>
+      </${Champ}>
+      <${Champ} id="maitre_ouvrage" label="Maître d'ouvrage"><input id="maitre_ouvrage" name="maitre_ouvrage" value=${i.maitre_ouvrage ?? ''} /></${Champ}>
+      <${Champ} id="numero_marche" label="N° de marché / AO"><input id="numero_marche" name="numero_marche" value=${i.numero_marche ?? ''} /></${Champ}>
+      <${Champ} id="lieu" label="Lieu"><input id="lieu" name="lieu" value=${i.lieu ?? ''} /></${Champ}>
+      <${Champ} id="responsable" label="Responsable"><input id="responsable" name="responsable" value=${i.responsable ?? ''} /></${Champ}>
+      <${Champ} id="montant_marche" label="Montant du marché TTC (DH)"><input id="montant_marche" name="montant_marche" inputmode="decimal" required value=${i.montant_marche ?? ''} /></${Champ}>
+      <${Champ} id="taux_tva" label="TVA (%)"><input id="taux_tva" name="taux_tva" inputmode="decimal" value=${i.taux_tva ?? 20} /></${Champ}>
+      <${Champ} id="taux_retenue" label="Retenue de garantie (%)"><input id="taux_retenue" name="taux_retenue" inputmode="decimal" value=${i.taux_retenue ?? 7} /></${Champ}>
+      <${Champ} id="statut" label="Statut"><select id="statut" name="statut" value=${i.statut ?? 'Soumission'}>${STATUTS_CHANTIER.map((s) => html`<option>${s}</option>`)}</select></${Champ}>
+      <${Champ} id="date_os" label="Date de l'ordre de service"><input id="date_os" name="date_os" type="date" value=${i.date_os ?? ''} /></${Champ}>
+      <${Champ} id="delai_jours" label="Délai d'exécution (jours)"><input id="delai_jours" name="delai_jours" inputmode="numeric" value=${i.delai_jours ?? ''} /></${Champ}>
+      <${Champ} id="jours_arret" label="Jours d'arrêt (OS d'arrêt)"><input id="jours_arret" name="jours_arret" inputmode="numeric" value=${i.jours_arret ?? 0} /></${Champ}>
+      <div><button class="btn" type="submit" disabled=${attente}>${attente ? 'Enregistrement…' : libelle}</button></div>
+    </form>`;
+}
+
+function NouveauChantier() {
+  return html`
+    <div>
+      <a href="#/" style=${{ fontSize: '13px', textDecoration: 'none' }}>← Tous les chantiers</a>
+      <h1 style=${{ marginTop: '8px' }}>Nouveau chantier</h1>
+      <div class="sous-titre">Le bordereau des prix, les cautions et les dépenses s'ajoutent ensuite depuis la fiche du chantier.</div>
+    </div>
+    <section class="carte"><div class="corps">
+      <${ChantierForm} libelle="Créer le chantier" onSave=${async (v) => {
+        const { data, error } = await sb.from('chantiers').insert(v).select('id').single();
+        if (error) return alert('Erreur : ' + error.message);
+        aller('/chantier/' + data.id);
+      }} />
+    </div></section>`;
+}
+
+// ---------- Fiche chantier ----------
+const ONGLETS = ['Synthèse', 'BPU et avancement', 'Décomptes', 'Dépenses', 'Cautions', 'Planning', 'Informations'];
+
+function Fiche({ id }) {
+  const [onglet, setOnglet] = useState('Synthèse');
+  const par = { col: 'chantier_id', val: id };
+  const chantier = useTable('chantiers', { col: 'id', val: id });
+  const societes = useTable('societes');
+  const fournisseurs = useTable('fournisseurs', null, { col: 'nom' });
+  const cautions = useTable('cautions', par, { col: 'date_emission' });
+  const bpu = useTable('articles_bpu', par, { col: 'ordre' });
+  const decomptes = useTable('decomptes', par, { col: 'numero' });
+  const depenses = useTable('depenses', par, { col: 'date', asc: false });
+  const taches = useTable('taches', par, { col: 'debut' });
+  const c = chantier.rows[0];
+  if (chantier.loading) return html`<div class="discret">Chargement…</div>`;
+  if (!c) return html`<div class="erreur">Chantier introuvable. <a href="#/">Retour au tableau de bord</a></div>`;
+  const k = indicateurs(c, { cautions: cautions.rows, bpu: bpu.rows, decomptes: decomptes.rows, depenses: depenses.rows, taches: taches.rows });
+  const societe = societes.rows.find((s) => s.id === c.societe_id)?.nom;
+  return html`
+    <div style=${{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+      <a href="#/" style=${{ fontSize: '13px', textDecoration: 'none' }}>← Tous les chantiers</a>
+      <div class="rangee" style=${{ gap: '10px' }}><h1>${c.intitule}</h1><${Badge} statut=${c.statut} />${k.aRisque && html`<span class="badge b-risque">À risque</span>`}</div>
+      <div class="sous-titre" style=${{ marginTop: 0 }}>${[c.code, c.numero_marche && 'Marché n° ' + c.numero_marche, societe, c.maitre_ouvrage && "Maître d'ouvrage : " + c.maitre_ouvrage].filter(Boolean).join(' · ')}</div>
+    </div>
+    <div class="onglets" role="tablist">
+      ${ONGLETS.map((o) => html`<button type="button" role="tab" aria-selected=${String(onglet === o)} onClick=${() => setOnglet(o)}>${o}</button>`)}
+    </div>
+    ${onglet === 'Synthèse' && html`<${Synthese} c=${c} k=${k} depenses=${depenses.rows} cautions=${cautions.rows} />`}
+    ${onglet === 'BPU et avancement' && html`<${Bpu} chantierId=${c.id} rows=${bpu.rows} reload=${bpu.reload} />`}
+    ${onglet === 'Décomptes' && html`<${Decomptes} c=${c} rows=${decomptes.rows} reload=${decomptes.reload} />`}
+    ${onglet === 'Dépenses' && html`<${Depenses} chantierId=${c.id} rows=${depenses.rows} fournisseurs=${fournisseurs.rows} reload=${depenses.reload} />`}
+    ${onglet === 'Cautions' && html`<${Cautions} c=${c} rows=${cautions.rows} reload=${cautions.reload} />`}
+    ${onglet === 'Planning' && html`<${Planning} c=${c} rows=${taches.rows} bpu=${bpu.rows} reload=${taches.reload} />`}
+    ${onglet === 'Informations' && html`
+      <section class="carte"><div class="corps" style=${{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <${ChantierForm} initial=${c} libelle="Enregistrer" onSave=${async (v) => {
+          const { error } = await sb.from('chantiers').update(v).eq('id', c.id);
+          if (error) return alert('Erreur : ' + error.message);
+          await chantier.reload(); setOnglet('Synthèse');
+        }} />
+        <div style=${{ borderTop: '1px solid var(--bord)', paddingTop: '16px' }}>
+          <button type="button" class="btn danger" onClick=${async () => {
+            if (!confirm('Supprimer ce chantier et toutes ses données (BPU, dépenses, cautions, décomptes, planning) ? Cette action est définitive.')) return;
+            const { error } = await sb.from('chantiers').delete().eq('id', c.id);
+            if (error) return alert('Erreur : ' + error.message);
+            aller('/');
+          }}>Supprimer le chantier</button>
+        </div>
+      </div></section>`}`;
+}
+
+function Synthese({ c, k, depenses, cautions }) {
+  const fraisC = cautions.reduce((a, x) => a + nb(x.frais), 0);
+  const parCat = CATEGORIES_DEPENSE.map((cat) => ({ cat, v: depenses.filter((d) => d.categorie === cat).reduce((a, d) => a + nb(d.montant_ttc), 0) }));
+  if (fraisC) parCat.push({ cat: 'Frais de cautions', v: fraisC });
+  const max = Math.max(1, ...parCat.map((p) => p.v));
+  const retard = (k.delaiEcoulePct ?? 0) > k.avancement + 10;
+  const Ligne = (label, valeur, pctv, couleur) => html`<div>
+    <div style=${{ display: 'flex', justifyContent: 'space-between' }}><span>${label}</span><span class="fort">${valeur}</span></div>
+    <div style=${{ marginTop: '6px' }}><${Barre} grande valeur=${pctv} couleur=${couleur} /></div></div>`;
+  return html`
+    <div class="tuiles">
+      <${Tuile} l="Montant du marché" v=${dh(k.budget)} s=${'DH TTC, TVA ' + c.taux_tva + ' %'} />
+      <${Tuile} l="Facturé (décomptes)" v=${dh(k.facture)} s=${'Encaissé : ' + dh(k.encaisse) + ' DH'} />
+      <${Tuile} l="Charges engagées" v=${dh(k.charges)} s=${'Payé : ' + dh(k.paye) + ' DH'} />
+      <${Tuile} l="Marge actuelle" v=${(k.marge >= 0 ? '+' : '') + dh(k.marge)} couleur=${k.marge >= 0 ? 'var(--ok)' : 'var(--risque)'} s=${k.margePct === null ? 'Pas encore facturé' : k.margePct.toFixed(1).replace('.', ',') + ' % du facturé'} />
+      <${Tuile} l="Reste à faire" v=${dh(k.resteAFacturer)} s=${'DH à facturer' + (k.tachesTotal ? ' · ' + k.tachesRestantes + ' tâches' : '')} />
+    </div>
+    <div class="grille2">
+      <section class="carte">
+        <div class="tete"><h2>Délai d'exécution</h2></div>
+        <div class="corps">
+          <div style=${{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: '12px', fontSize: '13px' }}>
+            <div><div class="discret">Ordre de service</div><div class="fort" style=${{ marginTop: '4px' }}>${dateFr(c.date_os)}</div></div>
+            <div><div class="discret">Délai contractuel</div><div class="fort" style=${{ marginTop: '4px' }}>${c.delai_jours ? c.delai_jours + ' jours' : '—'}</div></div>
+            <div><div class="discret">Fin prévue</div><div class="fort" style=${{ marginTop: '4px' }}>${dateFr(k.dateFin)}</div></div>
+          </div>
+          <div style=${{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '13px' }}>
+            ${k.delaiEcoulePct !== null && Ligne('Délai écoulé', Math.round(k.delaiEcoulePct) + ' % · ' + (k.joursRestants >= 0 ? k.joursRestants + ' j restants' : -k.joursRestants + ' j de retard'), k.delaiEcoulePct, retard ? 'var(--risque)' : 'var(--texte-2)')}
+            ${Ligne('Travaux réalisés', Math.round(k.avancement) + ' %', k.avancement, 'var(--progres)')}
+            ${Ligne('Budget consommé', Math.round(k.consommation) + ' %', k.consommation, 'var(--accent)')}
+          </div>
+          ${nb(c.jours_arret) > 0 && html`<p class="discret" style=${{ marginBottom: 0 }}>${c.jours_arret} jours d'arrêt de travaux déjà ajoutés au délai.</p>`}
+          ${k.raisons.length > 0 && html`<div class="erreur" style=${{ marginTop: '16px' }}>${k.raisons.join(' ; ')}.</div>`}
+        </div>
+      </section>
+      <section class="carte">
+        <div class="tete"><h2>Répartition des charges</h2></div>
+        <div class="corps">
+          ${parCat.map((p) => html`<div style=${{ display: 'grid', gridTemplateColumns: '140px minmax(0,1fr) 100px', alignItems: 'center', gap: '12px', fontSize: '13px', padding: '7px 0' }}>
+            <span>${p.cat}</span><div class="barre" style=${{ height: '12px' }}><div style=${{ width: (p.v / max) * 100 + '%', background: 'var(--accent)' }}></div></div><span class="d fort">${dh(p.v)}</span></div>`)}
+          <div style=${{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--bord)', marginTop: '10px', paddingTop: '12px', fontWeight: 700 }}><span>Total engagé</span><span>${dh(k.charges)} DH</span></div>
+        </div>
+      </section>
+    </div>
+    <div class="grille2">
+      <section class="carte"><div class="tete"><h2>Cautions</h2></div><div class="corps">
+        ${cautions.length === 0 ? html`<div class="discret">Aucune caution enregistrée.</div>` : cautions.map((x) => html`<div class="ligne-liste"><span><b>${x.type}</b>${x.banque ? ' · ' + x.banque : ''} · ${dh(x.montant)} DH</span><${Badge} statut=${x.statut} /></div>`)}
+      </div></section>
+      <section class="carte"><div class="tete"><h2>Dernières dépenses</h2></div><div class="corps">
+        ${depenses.length === 0 ? html`<div class="discret">Aucune dépense enregistrée.</div>` : depenses.slice(0, 6).map((d) => html`<div class="ligne-liste"><span>${dateFr(d.date).slice(0, 5)} · ${d.categorie} · ${d.libelle}</span><span class="fort">${dh(d.montant_ttc)}</span></div>`)}
+      </div></section>
+    </div>`;
+}
+
+// ---------- BPU ----------
+function lireBpu(buffer) {
+  const wb = XLSX.read(buffer);
+  const lignes = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '' });
+  const norm = (v) => String(v ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+  const nombre = (v) => typeof v === 'number' ? v : Number(String(v ?? '').replace(/[\s  ]/g, '').replace(',', '.'));
+  const iTete = lignes.findIndex((l) => l.some((c) => norm(c).includes('designation')));
+  if (iTete < 0) throw new Error('Colonne « Désignation » introuvable dans la première feuille.');
+  const tete = lignes[iTete].map(norm);
+  const col = (re, sauf = []) => tete.findIndex((h, i) => re.test(h) && !sauf.includes(i));
+  const cDes = col(/designation/), cPu = col(/prix unitaire|p\.?\s?u\b|unitaire/);
+  const cNum = col(/^n|numero|prix n|^art/, [cDes, cPu]), cUnite = col(/^u$|unite/, [cPu]), cQte = col(/quantite|qte|qt/);
+  if (cQte < 0 || cPu < 0) throw new Error('Colonnes « Quantité » et « Prix unitaire » introuvables.');
+  const res = [];
+  for (const l of lignes.slice(iTete + 1)) {
+    const des = String(l[cDes] ?? '').trim(), q = nombre(l[cQte]), pu = nombre(l[cPu]);
+    if (!des || !Number.isFinite(q) || !Number.isFinite(pu) || String(l[cQte]).trim() === '' || String(l[cPu]).trim() === '') continue;
+    res.push({ numero: cNum >= 0 ? String(l[cNum] ?? '').trim() || null : null, designation: des, unite: cUnite >= 0 ? String(l[cUnite] ?? '').trim() || null : null, quantite: q, prix_unitaire: pu });
+  }
+  if (!res.length) throw new Error('Aucune ligne de prix reconnue sous l’en-tête.');
+  return res;
+}
+
+function Bpu({ chantierId, rows, reload }) {
+  const fichier = useRef(null);
+  const [apercu, setApercu] = useState(null);
+  const [erreur, setErreur] = useState(null);
+  const total = rows.reduce((a, b) => a + nb(b.quantite) * nb(b.prix_unitaire), 0);
+  const fait = rows.reduce((a, b) => a + Math.min(nb(b.quantite_realisee), nb(b.quantite)) * nb(b.prix_unitaire), 0);
+  async function choisir(e) {
+    const f = e.target.files?.[0]; e.target.value = '';
+    if (!f) return;
+    setErreur(null);
+    try { setApercu(lireBpu(await f.arrayBuffer())); } catch (err) { setErreur(err.message); }
+  }
+  async function importer() {
+    if (await ecrire(sb.from('articles_bpu').insert(apercu.map((l, i) => ({ ...l, chantier_id: chantierId, ordre: rows.length + i }))))) { setApercu(null); await reload(); }
+  }
+  async function ajouter(e) {
+    const form = e.currentTarget, f = lireForm(e);
+    if (await ecrire(sb.from('articles_bpu').insert({ chantier_id: chantierId, ordre: rows.length, numero: str(f.get('numero')), designation: String(f.get('designation')), unite: str(f.get('unite')), quantite: num(f.get('quantite')), prix_unitaire: num(f.get('prix_unitaire')) }))) { form.reset(); await reload(); }
+  }
+  async function majRealise(a, v) {
+    const q = num(v);
+    if (q !== nb(a.quantite_realisee) && await ecrire(sb.from('articles_bpu').update({ quantite_realisee: q }).eq('id', a.id))) await reload();
+  }
+  return html`
+    <div class="tuiles">
+      <${Tuile} l="Montant du BPU" v=${dh(total)} s=${'DH HT · ' + rows.length + ' articles'} />
+      <${Tuile} l="Travaux réalisés" v=${dh(fait)} s="DH HT" />
+      <${Tuile} l="Avancement physique" v=${(total ? Math.round((fait / total) * 100) : 0) + ' %'} s="pondéré par les montants" />
+    </div>
+    <section class="carte">
+      <div class="tete"><h2>Importer le bordereau des prix</h2>
+        <div class="rangee">
+          <input ref=${fichier} type="file" accept=".xlsx,.xls,.csv" hidden onChange=${choisir} aria-label="Fichier du bordereau des prix" />
+          <button type="button" class="btn secondaire" onClick=${() => fichier.current.click()}>Choisir un fichier Excel ou CSV</button>
+        </div>
+      </div>
+      <div class="corps" style=${{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div class="discret">La première feuille doit contenir une ligne d'en-tête avec « Désignation », « Quantité » et « Prix unitaire » (et si possible « N° » et « Unité »).</div>
+        ${erreur && html`<div class="erreur">${erreur}</div>`}
+        ${apercu && html`
+          <div class="note">${apercu.length} articles reconnus, pour ${dh(apercu.reduce((a, l) => a + l.quantite * l.prix_unitaire, 0))} DH HT. Vérifiez les premières lignes puis confirmez.</div>
+          <div class="defile"><table>
+            <thead><tr><th>N°</th><th>Désignation</th><th>Unité</th><th class="d">Quantité</th><th class="d">PU HT</th></tr></thead>
+            <tbody>${apercu.slice(0, 8).map((l) => html`<tr><td>${l.numero}</td><td>${l.designation}</td><td>${l.unite}</td><td class="d">${dh(l.quantite)}</td><td class="d">${dh(l.prix_unitaire)}</td></tr>`)}</tbody>
+          </table></div>
+          <div class="rangee"><button type="button" class="btn" onClick=${importer}>Importer les ${apercu.length} articles</button><button type="button" class="btn secondaire" onClick=${() => setApercu(null)}>Annuler</button></div>`}
+      </div>
+    </section>
+    <section class="carte">
+      <div class="tete"><h2>Articles et quantités réalisées</h2><span class="discret">Saisissez les quantités réalisées à chaque attachement.</span></div>
+      <div class="defile">
+        <table style=${{ minWidth: '900px' }}>
+          <thead><tr><th>N° prix</th><th>Désignation</th><th>Unité</th><th class="d">Qté marché</th><th class="d">PU HT</th><th class="d">Montant HT</th><th class="d">Qté réalisée</th><th style=${{ width: '150px' }}>Avancement</th><th></th></tr></thead>
+          <tbody>${rows.map((a) => { const p = nb(a.quantite) ? (nb(a.quantite_realisee) / nb(a.quantite)) * 100 : 0; return html`
+            <tr key=${a.id}>
+              <td class="discret">${a.numero}</td><td>${a.designation}</td><td>${a.unite}</td>
+              <td class="d">${dh(a.quantite)}</td><td class="d">${dh(a.prix_unitaire)}</td><td class="d fort">${dh(nb(a.quantite) * nb(a.prix_unitaire))}</td>
+              <td class="d" style=${{ width: '120px' }}><input aria-label=${'Quantité réalisée ' + a.designation} inputmode="decimal" value=${a.quantite_realisee} style=${{ textAlign: 'right' }} onBlur=${(e) => majRealise(a, e.target.value)} /></td>
+              <td><div class="ligne-barre"><${Barre} valeur=${p} couleur="var(--progres)" /><span style=${{ width: '40px', textAlign: 'right' }}>${Math.round(p)} %</span></div></td>
+              <td><${BtnSuppr} label=${a.designation} onClick=${() => supprimer('articles_bpu', a.id, 'Supprimer cet article ?', reload)} /></td>
+            </tr>`; })}</tbody>
+        </table>
+        ${rows.length === 0 && html`<div class="vide">Aucun article. Importez le BPU du CPS ou ajoutez les lignes à la main.</div>`}
+      </div>
+      <div class="corps" style=${{ borderTop: '1px solid var(--bord)' }}>
+        <form class="formulaire" onSubmit=${ajouter}>
+          <${Champ} id="b-num" label="N° prix"><input id="b-num" name="numero" /></${Champ}>
+          <${Champ} id="b-des" label="Désignation" large><input id="b-des" name="designation" required /></${Champ}>
+          <${Champ} id="b-u" label="Unité"><input id="b-u" name="unite" /></${Champ}>
+          <${Champ} id="b-q" label="Quantité"><input id="b-q" name="quantite" inputmode="decimal" required /></${Champ}>
+          <${Champ} id="b-pu" label="PU HT (DH)"><input id="b-pu" name="prix_unitaire" inputmode="decimal" required /></${Champ}>
+          <div><button class="btn" type="submit">+ Ajouter l'article</button></div>
+        </form>
+      </div>
+    </section>`;
+}
+
+// ---------- Décomptes ----------
+function Decomptes({ c, rows, reload }) {
+  const r = nb(c.taux_retenue) / 100;
+  const total = rows.reduce((a, d) => a + nb(d.montant_ttc), 0);
+  const encaisse = rows.filter((d) => d.encaisse).reduce((a, d) => a + nb(d.montant_ttc) * (1 - r), 0);
+  const attente = rows.filter((d) => !d.encaisse);
+  async function ajouter(e) {
+    const form = e.currentTarget, f = lireForm(e);
+    if (await ecrire(sb.from('decomptes').insert({ chantier_id: c.id, numero: num(f.get('numero')), date: String(f.get('date')), montant_ttc: num(f.get('montant_ttc')) }))) { form.reset(); await reload(); }
+  }
+  let cumul = 0;
+  return html`
+    <div class="tuiles">
+      <${Tuile} l="Cumul facturé" v=${dh(total)} s=${(nb(c.montant_marche) ? Math.round((total / nb(c.montant_marche)) * 100) : 0) + ' % du marché'} />
+      <${Tuile} l=${'Retenue de garantie (' + c.taux_retenue + ' %)'} v=${dh(total * r)} s="libérée à la réception définitive" />
+      <${Tuile} l="Encaissé" v=${dh(encaisse)} s="net de retenue" />
+      <${Tuile} l="En attente de paiement" v=${dh(attente.reduce((a, d) => a + nb(d.montant_ttc) * (1 - r), 0))} s=${attente.length + ' décompte(s)'} />
+    </div>
+    <section class="carte">
+      <div class="tete"><h2>Décomptes</h2></div>
+      <div class="defile">
+        <table style=${{ minWidth: '760px' }}>
+          <thead><tr><th>N°</th><th>Date</th><th class="d">Montant TTC</th><th class="d">Cumul</th><th class="d">Retenue</th><th class="d">Net à encaisser</th><th>Encaissement</th><th></th></tr></thead>
+          <tbody>${rows.map((d) => { cumul += nb(d.montant_ttc); return html`
+            <tr key=${d.id}>
+              <td class="fort">${d.numero}</td><td>${dateFr(d.date)}</td><td class="d">${dh(d.montant_ttc)}</td><td class="d discret">${dh(cumul)}</td>
+              <td class="d">${dh(nb(d.montant_ttc) * r)}</td><td class="d fort">${dh(nb(d.montant_ttc) * (1 - r))}</td>
+              <td><label style=${{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <input type="checkbox" checked=${d.encaisse} onChange=${async (e) => { if (await ecrire(sb.from('decomptes').update({ encaisse: e.target.checked, date_encaissement: e.target.checked ? today() : null }).eq('id', d.id))) await reload(); }} />
+                ${d.encaisse ? 'Encaissé le ' + dateFr(d.date_encaissement) : 'Non encaissé'}</label></td>
+              <td><${BtnSuppr} label=${'décompte ' + d.numero} onClick=${() => supprimer('decomptes', d.id, 'Supprimer ce décompte ?', reload)} /></td>
+            </tr>`; })}</tbody>
+        </table>
+        ${rows.length === 0 && html`<div class="vide">Aucun décompte.</div>`}
+      </div>
+      <div class="corps" style=${{ borderTop: '1px solid var(--bord)' }}>
+        <form class="formulaire" onSubmit=${ajouter}>
+          <${Champ} id="d-n" label="N° du décompte"><input id="d-n" name="numero" inputmode="numeric" required value=${rows.length + 1} /></${Champ}>
+          <${Champ} id="d-d" label="Date"><input id="d-d" name="date" type="date" required value=${today()} /></${Champ}>
+          <${Champ} id="d-m" label="Montant de ce décompte TTC (DH)"><input id="d-m" name="montant_ttc" inputmode="decimal" required /></${Champ}>
+          <div><button class="btn" type="submit">+ Ajouter le décompte</button></div>
+        </form>
+      </div>
+    </section>`;
+}
+
+// ---------- Dépenses ----------
+function Depenses({ chantierId, rows, fournisseurs, reload }) {
+  const [filtre, setFiltre] = useState('Toutes');
+  const vis = filtre === 'Toutes' ? rows : rows.filter((d) => d.categorie === filtre);
+  const nomF = (id) => fournisseurs.find((f) => f.id === id)?.nom ?? '';
+  async function ajouter(e) {
+    const form = e.currentTarget, f = lireForm(e);
+    const montant = num(f.get('montant_ttc'));
+    if (await ecrire(sb.from('depenses').insert({
+      chantier_id: chantierId, categorie: String(f.get('categorie')), libelle: String(f.get('libelle')), fournisseur_id: str(f.get('fournisseur_id')),
+      numero_facture: str(f.get('numero_facture')), date: String(f.get('date')), montant_ttc: montant, montant_paye: f.get('paye') ? montant : num(f.get('montant_paye')),
+    }))) { form.reset(); await reload(); }
+  }
+  return html`
+    <section class="carte">
+      <div class="tete"><h2>Ajouter une dépense</h2></div>
+      <div class="corps">
+        <form class="formulaire" onSubmit=${ajouter}>
+          <${Champ} id="e-c" label="Catégorie"><select id="e-c" name="categorie">${CATEGORIES_DEPENSE.map((c) => html`<option>${c}</option>`)}</select></${Champ}>
+          <${Champ} id="e-l" label="Libellé" large><input id="e-l" name="libelle" required placeholder="Ex. Gravette 15/25, 120 m³" /></${Champ}>
+          <${Champ} id="e-f" label="Fournisseur"><select id="e-f" name="fournisseur_id"><option value="">—</option>${fournisseurs.map((f) => html`<option value=${f.id}>${f.nom}</option>`)}</select></${Champ}>
+          <${Champ} id="e-n" label="N° facture / bon"><input id="e-n" name="numero_facture" /></${Champ}>
+          <${Champ} id="e-d" label="Date"><input id="e-d" name="date" type="date" required value=${today()} /></${Champ}>
+          <${Champ} id="e-m" label="Montant TTC (DH)"><input id="e-m" name="montant_ttc" inputmode="decimal" required /></${Champ}>
+          <${Champ} id="e-p" label="Déjà payé (DH)"><input id="e-p" name="montant_paye" inputmode="decimal" value="0" /></${Champ}>
+          <div class="champ"><label style=${{ display: 'flex', gap: '8px', alignItems: 'center', minHeight: '40px' }}><input type="checkbox" name="paye" /> Payé en totalité</label></div>
+          <div><button class="btn" type="submit">+ Ajouter</button></div>
+        </form>
+        ${fournisseurs.length === 0 && html`<div class="discret" style=${{ marginTop: '12px' }}>Astuce : ajoutez vos fournisseurs dans le menu « Fournisseurs » pour suivre ce que vous leur devez.</div>`}
+      </div>
+    </section>
+    <section class="carte">
+      <div class="tete">
+        <h2>Dépenses du chantier <span class="discret" style=${{ fontWeight: 400 }}>· ${dh(vis.reduce((a, d) => a + nb(d.montant_ttc), 0))} DH</span></h2>
+        <div class="rangee" role="group" aria-label="Filtrer par catégorie">${['Toutes', ...CATEGORIES_DEPENSE].map((c) => html`<button type="button" class="pilule" aria-pressed=${String(filtre === c)} onClick=${() => setFiltre(c)}>${c}</button>`)}</div>
+      </div>
+      <div class="defile">
+        <table style=${{ minWidth: '900px' }}>
+          <thead><tr><th>Date</th><th>Catégorie</th><th>Libellé</th><th>Fournisseur</th><th>Facture</th><th class="d">Montant TTC</th><th class="d">Payé</th><th class="d">Reste</th><th></th></tr></thead>
+          <tbody>${vis.map((d) => html`
+            <tr key=${d.id}>
+              <td>${dateFr(d.date)}</td><td>${d.categorie}</td><td>${d.libelle}</td><td>${nomF(d.fournisseur_id)}</td><td class="discret">${d.numero_facture}</td>
+              <td class="d fort">${dh(d.montant_ttc)}</td>
+              <td class="d" style=${{ width: '130px' }}><input aria-label=${'Montant payé ' + d.libelle} inputmode="decimal" value=${d.montant_paye} style=${{ textAlign: 'right' }} onBlur=${async (e) => { const v = num(e.target.value); if (v !== nb(d.montant_paye) && await ecrire(sb.from('depenses').update({ montant_paye: v }).eq('id', d.id))) await reload(); }} /></td>
+              <td class="d" style=${{ color: nb(d.montant_ttc) - nb(d.montant_paye) > 0 ? 'var(--alerte)' : null }}>${dh(nb(d.montant_ttc) - nb(d.montant_paye))}</td>
+              <td><${BtnSuppr} label=${d.libelle} onClick=${() => supprimer('depenses', d.id, 'Supprimer cette dépense ?', reload)} /></td>
+            </tr>`)}</tbody>
+        </table>
+        ${vis.length === 0 && html`<div class="vide">Aucune dépense.</div>`}
+      </div>
+    </section>`;
+}
+
+// ---------- Cautions ----------
+function Cautions({ c, rows, reload }) {
+  async function ajouter(e) {
+    const form = e.currentTarget, f = lireForm(e);
+    if (await ecrire(sb.from('cautions').insert({
+      chantier_id: c.id, type: String(f.get('type')), banque: str(f.get('banque')), numero: str(f.get('numero')), montant: num(f.get('montant')),
+      frais: num(f.get('frais')), date_emission: str(f.get('date_emission')), date_echeance: str(f.get('date_echeance')),
+    }))) { form.reset(); await reload(); }
+  }
+  return html`
+    <section class="carte">
+      <div class="tete"><h2>Cautions du chantier</h2><span class="discret">Définitive conseillée : ${dh(nb(c.montant_marche) * 0.03)} DH (3 % du marché)</span></div>
+      <div class="defile">
+        <table style=${{ minWidth: '860px' }}>
+          <thead><tr><th>Type</th><th>Banque</th><th>N°</th><th class="d">Montant</th><th class="d">Frais</th><th>Émise le</th><th>Échéance</th><th>Statut</th><th></th></tr></thead>
+          <tbody>${rows.map((x) => html`
+            <tr key=${x.id}>
+              <td class="fort">${x.type}</td><td>${x.banque}</td><td class="discret">${x.numero}</td><td class="d fort">${dh(x.montant)}</td><td class="d">${dh(x.frais)}</td>
+              <td>${dateFr(x.date_emission)}</td><td>${dateFr(x.date_echeance)}</td>
+              <td style=${{ width: '150px' }}><select aria-label=${'Statut caution ' + x.type} value=${x.statut} onChange=${async (e) => { if (await ecrire(sb.from('cautions').update({ statut: e.target.value }).eq('id', x.id))) await reload(); }}>${STATUTS_CAUTION.map((s) => html`<option>${s}</option>`)}</select></td>
+              <td><${BtnSuppr} label=${'caution ' + x.type} onClick=${() => supprimer('cautions', x.id, 'Supprimer cette caution ?', reload)} /></td>
+            </tr>`)}</tbody>
+        </table>
+        ${rows.length === 0 && html`<div class="vide">Aucune caution.</div>`}
+      </div>
+      <div class="corps" style=${{ borderTop: '1px solid var(--bord)' }}>
+        <form class="formulaire" onSubmit=${ajouter}>
+          <${Champ} id="c-t" label="Type"><select id="c-t" name="type">${TYPES_CAUTION.map((t) => html`<option>${t}</option>`)}</select></${Champ}>
+          <${Champ} id="c-b" label="Banque"><input id="c-b" name="banque" /></${Champ}>
+          <${Champ} id="c-n" label="N° de caution"><input id="c-n" name="numero" /></${Champ}>
+          <${Champ} id="c-m" label="Montant (DH)"><input id="c-m" name="montant" inputmode="decimal" required /></${Champ}>
+          <${Champ} id="c-f" label="Frais bancaires (DH)"><input id="c-f" name="frais" inputmode="decimal" value="0" /></${Champ}>
+          <${Champ} id="c-e" label="Date d'émission"><input id="c-e" name="date_emission" type="date" /></${Champ}>
+          <${Champ} id="c-ech" label="Date d'échéance"><input id="c-ech" name="date_echeance" type="date" /></${Champ}>
+          <div><button class="btn" type="submit">+ Ajouter la caution</button></div>
+        </form>
+      </div>
+    </section>`;
+}
+
+// ---------- Planning (Gantt) ----------
+function Planning({ c, rows, bpu, reload }) {
+  const fin = dateFinPrevue(c), t = today();
+  const dates = [...rows.flatMap((r) => [r.debut, r.fin]), c.date_os, fin, t].filter(Boolean);
+  const d0s = dates.reduce((a, b) => (a < b ? a : b), t).slice(0, 8) + '01';
+  const fm = new Date(dates.reduce((a, b) => (a > b ? a : b), t) + 'T00:00:00Z'); fm.setUTCMonth(fm.getUTCMonth() + 1, 1);
+  const d1s = fm.toISOString().slice(0, 10);
+  const d0 = Date.parse(d0s), span = Date.parse(d1s) - d0;
+  const pos = (d) => ((Date.parse(d) - d0) / span) * 100;
+  const mois = [];
+  for (let m = new Date(d0s + 'T00:00:00Z'); m.toISOString().slice(0, 10) < d1s; m.setUTCMonth(m.getUTCMonth() + 1)) {
+    const a = m.toISOString().slice(0, 10), n = new Date(m); n.setUTCMonth(n.getUTCMonth() + 1);
+    mois.push({ label: MOIS[m.getUTCMonth()] + (m.getUTCMonth() === 0 ? ' ' + m.getUTCFullYear() : ''), l: pos(a), w: pos(n.toISOString().slice(0, 10)) - pos(a) });
+  }
+  const enRetard = (r) => { const att = Math.max(0, Math.min(100, ((Date.parse(t) - Date.parse(r.debut)) / Math.max(1, Date.parse(r.fin) - Date.parse(r.debut))) * 100)); return nb(r.avancement) < 100 && att - nb(r.avancement) > 15; };
+  async function ajouter(e) {
+    const form = e.currentTarget, f = lireForm(e);
+    if (await ecrire(sb.from('taches').insert({ chantier_id: c.id, nom: String(f.get('nom')), debut: String(f.get('debut')), fin: String(f.get('fin')), avancement: Math.max(0, Math.min(100, num(f.get('avancement')))), ordre: rows.length }))) { form.reset(); await reload(); }
+  }
+  async function depuisBpu() {
+    if (!bpu.length) return alert("Importez d'abord le bordereau des prix.");
+    const debut = c.date_os ?? t;
+    if (await ecrire(sb.from('taches').insert(bpu.map((a, i) => ({ chantier_id: c.id, nom: (a.numero ? a.numero + ' · ' : '') + a.designation, debut, fin: addDays(debut, 30), avancement: 0, ordre: rows.length + i }))))) await reload();
+  }
+  return html`
+    <div class="entete">
+      <div class="discret">OS le ${dateFr(c.date_os)} · délai ${c.delai_jours ?? '—'} jours${nb(c.jours_arret) ? ` + ${c.jours_arret} jours d'arrêt` : ''} · fin contractuelle le ${dateFr(fin)}</div>
+      <button type="button" class="btn secondaire" onClick=${depuisBpu}>Créer une tâche par article du BPU</button>
+    </div>
+    <section class="carte defile" aria-label="Diagramme de Gantt">
+      <div class="gantt">
+        <div class="rang" style=${{ minHeight: '44px', borderBottom: '1px solid var(--bord)' }}>
+          <div class="nom discret fort" style=${{ textTransform: 'uppercase', fontSize: '12px' }}>Tâche</div>
+          <div class="piste">${mois.map((m) => html`<div style=${{ position: 'absolute', top: 0, bottom: 0, left: m.l + '%', width: m.w + '%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 600, color: 'var(--texte-2)' }}>${m.label}</div>`)}</div>
+        </div>
+        <div class="calque" aria-hidden="true">
+          ${mois.map((m) => html`<div style=${{ position: 'absolute', top: 0, bottom: 0, left: m.l + '%', width: '1px', background: 'var(--bord-leger)' }}></div>`)}
+          <div title="Aujourd'hui" style=${{ position: 'absolute', top: 0, bottom: 0, left: pos(t) + '%', width: '2px', background: 'var(--accent)' }}></div>
+          ${fin && html`<div title="Fin contractuelle" style=${{ position: 'absolute', top: 0, bottom: 0, left: pos(fin) + '%', width: '2px', background: 'var(--risque)' }}></div>`}
+        </div>
+        ${rows.map((r) => { const late = enRetard(r); return html`
+          <div class="rang" key=${r.id}>
+            <div class="nom">
+              <div class="fort" style=${{ fontSize: '13.5px' }}>${r.nom}</div>
+              <div style=${{ display: 'flex', gap: '6px', alignItems: 'center', fontSize: '12px', color: late ? 'var(--risque)' : 'var(--texte-2)' }}>
+                ${dateFr(r.debut).slice(0, 5)} → ${dateFr(r.fin).slice(0, 5)} ·
+                <input aria-label=${'Avancement ' + r.nom} inputmode="numeric" value=${r.avancement} style=${{ width: '52px', minHeight: '26px', padding: '2px 6px', fontSize: '12px' }} onBlur=${async (e) => { const v = Math.max(0, Math.min(100, num(e.target.value))); if (v !== nb(r.avancement) && await ecrire(sb.from('taches').update({ avancement: v }).eq('id', r.id))) await reload(); }} /> %${late ? ' · en retard' : ''}
+                <button type="button" class="btn danger petit" style=${{ minHeight: '24px', padding: '0 6px', marginLeft: 'auto' }} aria-label=${'Supprimer ' + r.nom} onClick=${() => supprimer('taches', r.id, 'Supprimer cette tâche ?', reload)}>×</button>
+              </div>
+            </div>
+            <div class="piste"><div class="bar" style=${{ left: pos(r.debut) + '%', width: Math.max(0.5, pos(r.fin) - pos(r.debut)) + '%', background: late ? '#F4C7C2' : 'var(--progres-clair)' }}><div style=${{ height: '100%', width: nb(r.avancement) + '%', background: 'var(--progres)' }}></div></div></div>
+          </div>`; })}
+        ${rows.length === 0 && html`<div class="vide">Aucune tâche. Ajoutez-en ci-dessous ou créez-les depuis le BPU.</div>`}
+      </div>
+    </section>
+    <section class="carte">
+      <div class="tete"><h2>Ajouter une tâche</h2><span class="discret">Ligne verte : aujourd'hui · ligne rouge : fin contractuelle</span></div>
+      <div class="corps">
+        <form class="formulaire" onSubmit=${ajouter}>
+          <${Champ} id="t-n" label="Tâche" large><input id="t-n" name="nom" required placeholder="Ex. Terrassements" /></${Champ}>
+          <${Champ} id="t-d" label="Début"><input id="t-d" name="debut" type="date" required value=${c.date_os ?? t} /></${Champ}>
+          <${Champ} id="t-f" label="Fin"><input id="t-f" name="fin" type="date" required /></${Champ}>
+          <${Champ} id="t-a" label="Avancement (%)"><input id="t-a" name="avancement" inputmode="numeric" value="0" /></${Champ}>
+          <div><button class="btn" type="submit">+ Ajouter</button></div>
+        </form>
+      </div>
+    </section>`;
+}
+
+// ---------- Chèques et paiements ----------
+function Tresorerie() {
+  const cheques = useTable('cheques', null, { col: 'date_echeance', asc: true });
+  const fournisseurs = useTable('fournisseurs', null, { col: 'nom' });
+  const chantiers = useTable('chantiers', null, { col: 'intitule' });
+  const depenses = useTable('depenses');
+  const [filtre, setFiltre] = useState('Tous');
+  const t = today(), dans7 = addDays(t, 7);
+  const emis = cheques.rows.filter((q) => q.statut === 'Émis');
+  const proches = emis.filter((q) => q.date_echeance && q.date_echeance <= dans7);
+  const du = depenses.rows.reduce((a, d) => a + Math.max(0, nb(d.montant_ttc) - nb(d.montant_paye)), 0);
+  const vis = filtre === 'Tous' ? cheques.rows : cheques.rows.filter((q) => q.statut === filtre);
+  const nomF = (id) => fournisseurs.rows.find((f) => f.id === id)?.nom;
+  const nomC = (id) => chantiers.rows.find((c) => c.id === id)?.intitule ?? '—';
+  async function ajouter(e) {
+    const form = e.currentTarget, f = lireForm(e);
+    const fid = str(f.get('fournisseur_id'));
+    if (await ecrire(sb.from('cheques').insert({
+      numero: String(f.get('numero')), banque: str(f.get('banque')), fournisseur_id: fid, beneficiaire: str(f.get('beneficiaire')) ?? (fid ? nomF(fid) ?? null : null),
+      chantier_id: str(f.get('chantier_id')), montant: num(f.get('montant')), date_emission: String(f.get('date_emission')), date_echeance: str(f.get('date_echeance')),
+    }))) { form.reset(); await cheques.reload(); }
+  }
+  const situation = fournisseurs.rows.map((f) => {
+    const deps = depenses.rows.filter((d) => d.fournisseur_id === f.id);
+    const facture = deps.reduce((a, d) => a + nb(d.montant_ttc), 0), paye = deps.reduce((a, d) => a + nb(d.montant_paye), 0);
+    return { f, facture, paye, reste: facture - paye, enCours: emis.filter((q) => q.fournisseur_id === f.id).reduce((a, q) => a + nb(q.montant), 0) };
+  }).filter((s) => s.facture > 0 || s.enCours > 0).sort((a, b) => b.reste - a.reste);
+  return html`
+    <div class="entete"><h1>Chèques et paiements</h1></div>
+    ${cheques.error && html`<div class="erreur">${cheques.error}</div>`}
+    <div class="tuiles">
+      <${Tuile} l="Chèques émis non encaissés" v=${dh(emis.reduce((a, q) => a + nb(q.montant), 0))} s=${emis.length + ' chèque(s)'} />
+      <${Tuile} l="À provisionner sous 7 jours" v=${dh(proches.reduce((a, q) => a + nb(q.montant), 0))} couleur=${proches.length ? 'var(--alerte)' : null} s=${proches.length + " chèque(s), jusqu'au " + dateFr(dans7).slice(0, 5)} />
+      <${Tuile} l="Dû aux fournisseurs" v=${dh(du)} s="factures non réglées, tous chantiers" />
+    </div>
+    <section class="carte">
+      <div class="tete"><h2>Enregistrer un chèque</h2></div>
+      <div class="corps">
+        <form class="formulaire" onSubmit=${ajouter}>
+          <${Champ} id="q-n" label="N° du chèque"><input id="q-n" name="numero" required /></${Champ}>
+          <${Champ} id="q-b" label="Banque"><input id="q-b" name="banque" /></${Champ}>
+          <${Champ} id="q-f" label="Fournisseur"><select id="q-f" name="fournisseur_id"><option value="">—</option>${fournisseurs.rows.map((f) => html`<option value=${f.id}>${f.nom}</option>`)}</select></${Champ}>
+          <${Champ} id="q-be" label="Autre bénéficiaire"><input id="q-be" name="beneficiaire" placeholder="si pas dans la liste" /></${Champ}>
+          <${Champ} id="q-c" label="Chantier"><select id="q-c" name="chantier_id"><option value="">—</option>${chantiers.rows.map((c) => html`<option value=${c.id}>${c.intitule}</option>`)}</select></${Champ}>
+          <${Champ} id="q-m" label="Montant (DH)"><input id="q-m" name="montant" inputmode="decimal" required /></${Champ}>
+          <${Champ} id="q-de" label="Émis le"><input id="q-de" name="date_emission" type="date" required value=${t} /></${Champ}>
+          <${Champ} id="q-ech" label="Échéance"><input id="q-ech" name="date_echeance" type="date" /></${Champ}>
+          <div><button class="btn" type="submit">+ Enregistrer</button></div>
+        </form>
+      </div>
+    </section>
+    <section class="carte">
+      <div class="tete"><h2>Registre des chèques</h2>
+        <div class="rangee" role="group" aria-label="Filtrer par statut">${['Tous', ...STATUTS_CHEQUE].map((s) => html`<button type="button" class="pilule" aria-pressed=${String(filtre === s)} onClick=${() => setFiltre(s)}>${s}</button>`)}</div>
+      </div>
+      <div class="defile">
+        <table style=${{ minWidth: '960px' }}>
+          <thead><tr><th>N° chèque</th><th>Bénéficiaire</th><th>Chantier</th><th>Banque</th><th>Émis le</th><th>Échéance</th><th class="d">Montant (DH)</th><th>Statut</th><th></th></tr></thead>
+          <tbody>${vis.map((q) => { const proche = q.statut === 'Émis' && q.date_echeance && q.date_echeance <= dans7; return html`
+            <tr key=${q.id}>
+              <td class="fort">${q.numero}</td><td>${q.beneficiaire ?? nomF(q.fournisseur_id) ?? '—'}</td><td>${nomC(q.chantier_id)}</td><td>${q.banque}</td><td>${dateFr(q.date_emission)}</td>
+              <td style=${proche ? { color: 'var(--alerte)', fontWeight: 600 } : null}>${dateFr(q.date_echeance)}${proche ? (q.date_echeance < t ? ' · dépassée' : ' · cette semaine') : ''}</td>
+              <td class="d fort">${dh(q.montant)}</td>
+              <td style=${{ width: '140px' }}><select aria-label=${'Statut chèque ' + q.numero} value=${q.statut} onChange=${async (e) => { if (await ecrire(sb.from('cheques').update({ statut: e.target.value }).eq('id', q.id))) await cheques.reload(); }}>${STATUTS_CHEQUE.map((s) => html`<option>${s}</option>`)}</select></td>
+              <td><${BtnSuppr} label=${'chèque ' + q.numero} onClick=${() => supprimer('cheques', q.id, 'Supprimer ce chèque ?', cheques.reload)} /></td>
+            </tr>`; })}</tbody>
+        </table>
+        ${vis.length === 0 && html`<div class="vide">Aucun chèque.</div>`}
+      </div>
+    </section>
+    <section class="carte">
+      <div class="tete"><h2>Situation des fournisseurs</h2></div>
+      <div class="defile">
+        <table style=${{ minWidth: '720px' }}>
+          <thead><tr><th>Fournisseur</th><th>Catégorie</th><th class="d">Facturé (DH)</th><th class="d">Payé (DH)</th><th class="d">Reste dû (DH)</th><th class="d">Chèques en circulation</th></tr></thead>
+          <tbody>${situation.map((s) => html`<tr><td class="fort">${s.f.nom}</td><td>${s.f.categorie}</td><td class="d">${dh(s.facture)}</td><td class="d">${dh(s.paye)}</td><td class="d fort">${dh(s.reste)}</td><td class="d">${dh(s.enCours)}</td></tr>`)}</tbody>
+        </table>
+        ${situation.length === 0 && html`<div class="vide">Aucune facture fournisseur enregistrée.</div>`}
+      </div>
+    </section>`;
+}
+
+// ---------- Fournisseurs ----------
+function Fournisseurs() {
+  const f = useTable('fournisseurs', null, { col: 'nom' });
+  async function ajouter(e) {
+    const form = e.currentTarget, d = lireForm(e);
+    if (await ecrire(sb.from('fournisseurs').insert({ nom: String(d.get('nom')), categorie: str(d.get('categorie')), ice: str(d.get('ice')), rib: str(d.get('rib')), telephone: str(d.get('telephone')) }))) { form.reset(); await f.reload(); }
+  }
+  return html`
+    <div class="entete"><h1>Fournisseurs et sous-traitants</h1></div>
+    <section class="carte">
+      <div class="tete"><h2>Ajouter un fournisseur</h2></div>
+      <div class="corps">
+        <form class="formulaire" onSubmit=${ajouter}>
+          <${Champ} id="f-n" label="Raison sociale"><input id="f-n" name="nom" required /></${Champ}>
+          <${Champ} id="f-c" label="Catégorie"><input id="f-c" name="categorie" placeholder="Ciment, fer, transport…" /></${Champ}>
+          <${Champ} id="f-i" label="ICE"><input id="f-i" name="ice" /></${Champ}>
+          <${Champ} id="f-r" label="RIB"><input id="f-r" name="rib" /></${Champ}>
+          <${Champ} id="f-t" label="Téléphone"><input id="f-t" name="telephone" type="tel" /></${Champ}>
+          <div><button class="btn" type="submit">+ Ajouter</button></div>
+        </form>
+      </div>
+    </section>
+    <section class="carte">
+      <div class="defile">
+        <table style=${{ minWidth: '700px' }}>
+          <thead><tr><th>Raison sociale</th><th>Catégorie</th><th>ICE</th><th>RIB</th><th>Téléphone</th><th></th></tr></thead>
+          <tbody>${f.rows.map((x) => html`<tr key=${x.id}><td class="fort">${x.nom}</td><td>${x.categorie}</td><td>${x.ice}</td><td class="discret">${x.rib}</td><td>${x.telephone}</td>
+            <td><${BtnSuppr} label=${x.nom} onClick=${() => supprimer('fournisseurs', x.id, 'Supprimer ce fournisseur ?', f.reload)} /></td></tr>`)}</tbody>
+        </table>
+        ${f.rows.length === 0 && !f.loading && html`<div class="vide">Aucun fournisseur.</div>`}
+      </div>
+    </section>`;
+}
+
+// ---------- Application ----------
+function App() {
+  const route = useRoute();
+  const [session, setSession] = useState(undefined);
+  useEffect(() => {
+    if (!CONFIG_OK) return;
+    sb.auth.getSession().then(({ data }) => setSession(data.session));
+    const { data } = sb.auth.onAuthStateChange((_e, s) => setSession(s));
+    return () => data.subscription.unsubscribe();
+  }, []);
+  if (!CONFIG_OK) return html`<div class="contenu"><div class="erreur">Supabase n'est pas configuré. Ouvrez index.html sur GitHub (icône crayon) et remplacez, en haut du fichier, VOTRE-PROJET et VOTRE-CLE-PUBLIQUE par les valeurs de Supabase › Project Settings › API.</div></div>`;
+  if (session === undefined) return html`<div class="contenu discret">Chargement…</div>`;
+  if (!session) return html`<${Login} />`;
+  let page;
+  if (route.startsWith('/chantier/')) page = html`<${Fiche} key=${route} id=${route.slice('/chantier/'.length)} />`;
+  else if (route === '/nouveau') page = html`<${NouveauChantier} />`;
+  else if (route === '/tresorerie') page = html`<${Tresorerie} />`;
+  else if (route === '/fournisseurs') page = html`<${Fournisseurs} />`;
+  else page = html`<${TableauDeBord} />`;
+  return html`<${Cadre} route=${route} email=${session.user.email}>${page}</${Cadre}>`;
+}
+
+render(html`<${App} />`, document.getElementById('app'));
+</script>
+</body>
+</html>
