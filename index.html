@@ -225,6 +225,8 @@ const Champ = ({ id, label, large, children }) => html`<div class=${'champ' + (l
 const lireForm = (e) => { e.preventDefault(); return new FormData(e.currentTarget); };
 
 // ---------- Connexion ----------
+// Connexion par nom : « reda » devient reda@cedil-adpap.app côté Supabase (aucun email envoyé).
+const DOMAINE_COMPTES = '@cedil-adpap.app';
 function Login() {
   const [mode, setMode] = useState('connexion');
   const [erreur, setErreur] = useState(null);
@@ -233,11 +235,12 @@ function Login() {
   async function envoyer(e) {
     const f = lireForm(e);
     setErreur(null); setInfo(null); setAttente(true);
-    const email = String(f.get('email')), password = String(f.get('password'));
+    const nom = String(f.get('nom')).trim().toLowerCase().replace(/\s+/g, '.');
+    const email = nom.includes('@') ? nom : nom + DOMAINE_COMPTES, password = String(f.get('password'));
     const res = mode === 'connexion' ? await sb.auth.signInWithPassword({ email, password }) : await sb.auth.signUp({ email, password });
     setAttente(false);
     if (res.error) return setErreur(res.error.message);
-    if (mode === 'inscription' && !res.data.session) setInfo('Compte créé. Confirmez votre adresse via l’email reçu, puis connectez-vous.');
+    if (mode === 'inscription' && !res.data.session) setInfo('Compte créé. Connectez-vous avec votre nom et votre mot de passe.');
   }
   return html`
     <div style=${{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: '16px' }}>
@@ -248,7 +251,7 @@ function Login() {
           ${erreur && html`<div class="erreur">${erreur}</div>`}
           ${info && html`<div class="note">${info}</div>`}
           <form onSubmit=${envoyer} style=${{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            <${Champ} id="email" label="Email"><input id="email" name="email" type="email" required autocomplete="email" /></${Champ}>
+            <${Champ} id="nom" label="Nom d'utilisateur"><input id="nom" name="nom" required autocomplete="username" autocapitalize="none" /></${Champ}>
             <${Champ} id="password" label="Mot de passe"><input id="password" name="password" type="password" required minlength="6" /></${Champ}>
             <button class="btn" type="submit" disabled=${attente} style=${{ justifyContent: 'center' }}>${attente ? 'Patientez…' : mode === 'connexion' ? 'Se connecter' : 'Créer le compte'}</button>
           </form>
@@ -998,7 +1001,7 @@ function App() {
   else if (route === '/tresorerie') page = html`<${Tresorerie} />`;
   else if (route === '/fournisseurs') page = html`<${Fournisseurs} />`;
   else page = html`<${TableauDeBord} />`;
-  return html`<${Cadre} route=${route} email=${session.user.email}>${page}</${Cadre}>`;
+  return html`<${Cadre} route=${route} email=${(session.user.email || '').replace(DOMAINE_COMPTES, '')}>${page}</${Cadre}>`;
 }
 
 render(html`<${App} />`, document.getElementById('app'));
