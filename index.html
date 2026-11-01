@@ -124,7 +124,7 @@ const sb = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANO
 const STATUTS_CHANTIER = ['Soumission', 'Attribué', 'En cours', 'Arrêté', 'Réception provisoire', 'Clôturé'];
 const TYPES_CAUTION = ['Provisoire', 'Définitive', 'Retenue de garantie', 'Avance'];
 const STATUTS_CAUTION = ['Active', 'À restituer', 'Restituée'];
-const CATEGORIES_DEPENSE = ['Achats matériaux', "Main d'œuvre", 'Transport', 'Sous-traitance', 'Location engins', 'Dépenses diverses'];
+const CATEGORIES_DEPENSE = ['Produits', 'Achats matériaux', "Main d'œuvre", 'Transport', 'Sous-traitance', 'Location engins', 'Dépenses diverses'];
 const STATUTS_CHEQUE = ['Émis', 'Encaissé', 'Rejeté', 'Annulé'];
 const MOIS = ['Janv', 'Févr', 'Mars', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sept', 'Oct', 'Nov', 'Déc'];
 
@@ -707,7 +707,8 @@ function Decomptes({ c, rows, reload }) {
 // ---------- Dépenses ----------
 function Depenses({ chantierId, rows, fournisseurs, reload }) {
   const [filtre, setFiltre] = useState('Toutes');
-  const vis = filtre === 'Toutes' ? rows : rows.filter((d) => d.categorie === filtre);
+  const vis = (filtre === 'Toutes' ? rows : rows.filter((d) => d.categorie === filtre)).slice()
+    .sort((x, y) => (y.date || '').localeCompare(x.date || '') || (x.numero_facture || '').localeCompare(y.numero_facture || '') || (x.libelle || '').localeCompare(y.libelle || '', 'fr', { numeric: true }));
   const nomF = (id) => fournisseurs.find((f) => f.id === id)?.nom ?? '';
   async function ajouter(e) {
     const form = e.currentTarget, f = lireForm(e);
