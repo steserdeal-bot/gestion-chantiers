@@ -108,6 +108,27 @@ td input, td select { min-height: 34px; padding: 4px 8px; }
 .gantt .piste { position: relative; }
 .gantt .calque { position: absolute; top: 44px; bottom: 0; left: 280px; right: 0; pointer-events: none; }
 .gantt .bar { position: absolute; top: 15px; height: 22px; border-radius: 5px; overflow: hidden; }
+a.rang-lien { color: inherit; text-decoration: none; }
+tr.cliquable { cursor: pointer; }
+tr.cliquable:hover td { background: #FAFBFC; }
+.bandeau { background: #FFF7ED; border: 1px solid #FED7AA; border-radius: var(--rayon); padding: 14px 18px; color: #9A3412; }
+.bandeau ul { margin: 6px 0 0; padding-left: 18px; }
+.dossiers { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px; }
+.dossier { background: var(--surface); border: 1px solid var(--bord); border-radius: var(--rayon); padding: 16px 18px; text-align: left; font: inherit; color: inherit; cursor: pointer; display: flex; flex-direction: column; gap: 3px; text-decoration: none; }
+.dossier:hover { border-color: var(--accent); }
+.dossier .ic { font-size: 24px; }
+.dossier .nom { font-weight: 700; margin-top: 4px; }
+.dossier .mt { font-size: 21px; font-weight: 700; margin-top: 6px; }
+.dossier.vide-cat { opacity: .55; }
+.dossier.ajout { border-style: dashed; align-items: center; justify-content: center; color: var(--texte-2); min-height: 120px; }
+tr.groupe td { background: var(--accent-clair); font-weight: 700; cursor: pointer; }
+tr.total td { background: #F8FAFC; font-weight: 700; }
+.badge.clic { cursor: pointer; border: none; font: inherit; font-size: 12px; font-weight: 600; }
+.serre th, .serre td { padding: 10px 8px; }
+.serre th:first-child, .serre td:first-child { padding-left: 16px; }
+.cote { display: grid; grid-template-columns: minmax(300px, 400px) minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 1000px) { .cote { grid-template-columns: 1fr; } }
+@media print { .menu, .no-print { display: none !important; } .contenu { padding: 0; } .carte { border: none; } .cote { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
@@ -124,7 +145,17 @@ const sb = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANO
 const STATUTS_CHANTIER = ['Soumission', 'Attribué', 'En cours', 'Arrêté', 'Réception provisoire', 'Clôturé'];
 const TYPES_CAUTION = ['Provisoire', 'Définitive', 'Retenue de garantie', 'Avance'];
 const STATUTS_CAUTION = ['Active', 'À restituer', 'Restituée'];
-const CATEGORIES_DEPENSE = ['Produits', 'Achats matériaux', "Main d'œuvre", 'Transport', 'Sous-traitance', 'Location engins', 'Dépenses diverses'];
+// Catégories par défaut (la liste réelle vient de la table categories_charges)
+const CATEGORIES_DEFAUT = [
+  ['Matériaux', '🧱', 'ciment, sable, fer, peinture, quincaillerie'], ['Plomberie et tuyaux', '🚰', 'poly, PVC, tube galva, raccords, vannes'],
+  ['Matériel électrique et solaire', '⚡', 'câbles, disjoncteurs, panneaux'], ['Petit matériel et outillage', '🛠️', 'pelles, brouette, disques, vibreur'],
+  ['Produits', '📦', 'produits achetés chez les fournisseurs'], ["Main d'œuvre", '👷', 'maâlem, ouvriers, avances aux ouvriers'],
+  ['Charges sociales (CNSS)', '🏛️', 'CNSS des salariés'], ['Sous-traitance et forage', '🕳️', 'sondage, puits, tâcherons'],
+  ['Location et transport', '🚜', 'tracteur, camion, moto, transit'], ['Carburant', '⛽', 'gasoil'],
+  ['Missions et déplacements', '🏨', 'hôtel, repas, autoroute, taxi'], ['Loyers', '🏠', 'maison, garage, dépôt'],
+  ['Installation de chantier', '⛺', 'gardien, baraque, eau, électricité'], ['Frais société', '📑', 'société, comptable, factures'], ['À préciser', '❓', 'lignes à classer'],
+].map(([nom, icone, description], i) => ({ nom, icone, description, ordre: i + 1 }));
+const ETATS = ['Sûr', 'À vérifier'];
 const STATUTS_CHEQUE = ['Émis', 'Encaissé', 'Rejeté', 'Annulé'];
 const MOIS = ['Janv', 'Févr', 'Mars', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sept', 'Oct', 'Nov', 'Déc'];
 
@@ -156,7 +187,7 @@ function indicateurs(c, d) {
   const fraisCautions = d.cautions.reduce((a, x) => a + nb(x.frais), 0);
   const charges = d.depenses.reduce((a, x) => a + nb(x.montant_ttc), 0) + fraisCautions;
   const paye = d.depenses.reduce((a, x) => a + nb(x.montant_paye), 0) + fraisCautions;
-  const avancement = avancementPhysique(d.bpu, d.taches);
+  const avancement = c.avancement_manuel !== null && c.avancement_manuel !== undefined ? nb(c.avancement_manuel) : avancementPhysique(d.bpu, d.taches);
   const consommation = budget > 0 ? (charges / budget) * 100 : 0;
   const dateFin = dateFinPrevue(c);
   let delaiEcoulePct = null, joursRestants = null;
@@ -202,6 +233,21 @@ async function ecrire(p) {
   const { error } = await p;
   if (error) { alert('Erreur : ' + error.message); return false; }
   return true;
+}
+// Catégories : table categories_charges + catégories déjà utilisées dans les charges
+function useCategories(depenses = []) {
+  const t = useTable('categories_charges', null, { col: 'ordre' });
+  const base = t.error || t.rows.length === 0 ? CATEGORIES_DEFAUT : t.rows;
+  const noms = new Set(base.map((c) => c.nom));
+  const extra = [...new Set(depenses.map((d) => d.categorie).filter((n) => n && !noms.has(n)))].map((nom) => ({ nom, icone: '📁', description: '', ordre: 200 }));
+  return { liste: [...base, ...extra], reload: t.reload, tableOk: !t.error };
+}
+const iconeDe = (liste, nom) => liste.find((c) => c.nom === nom)?.icone ?? '📁';
+async function nouvelleCategorie(reload) {
+  const nom = (prompt('Nom de la nouvelle catégorie de charges :') || '').trim();
+  if (!nom) return;
+  const icone = (prompt('Un symbole pour la reconnaître (vous pouvez laisser 📁) :', '📁') || '📁').trim();
+  if (await ecrire(sb.from('categories_charges').insert({ nom, icone }))) await reload();
 }
 const supprimer = async (table, id, question, reload) => {
   if (confirm(question) && await ecrire(sb.from(table).delete().eq('id', id))) await reload();
@@ -265,14 +311,14 @@ function Login() {
 
 // ---------- Cadre (menu) ----------
 function Cadre({ route, email, children }) {
-  const liens = [['/', 'Tableau de bord'], ['/nouveau', 'Nouveau chantier'], ['/tresorerie', 'Chèques et paiements'], ['/fournisseurs', 'Fournisseurs']];
-  const actif = (r) => r === '/' ? (route === '/' || route.startsWith('/chantier/')) : route === r;
+  const liens = [['/', '📊 Tableau de bord'], ['/chantiers', '📁 Chantiers (dossiers)'], ['/achats', '🛒 Achats'], ['/fournisseurs', '🚚 Fournisseurs'], ['/cautions', '🛡️ Cautions'], ['/tresorerie', '💰 Chèques et paiements']];
+  const actif = (r) => r === '/chantiers' ? (route === r || route.startsWith('/chantier/') || route === '/nouveau') : route === r;
   return html`
     <div class="app">
       <nav class="menu" aria-label="Menu principal">
         <div class="logo">
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#0F766E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 20h20"/><path d="M5 20V9l7-5 7 5v11"/><path d="M9 20v-6h6v6"/></svg>
-          Chantiers
+          Cédil · ADPAP
         </div>
         ${liens.map(([r, l]) => html`<a href=${'#' + r} class=${actif(r) ? 'actif' : ''}>${l}</a>`)}
         <div class="bas">
@@ -285,6 +331,12 @@ function Cadre({ route, email, children }) {
 }
 
 // ---------- Tableau de bord ----------
+function badgeCaution(x) {
+  const cls = x.statut === 'À restituer' ? 'b-alerte' : x.statut === 'Restituée' ? 'b-neutre' : 'b-ok';
+  const suite = x.statut === 'Restituée' ? ' · rendue' : '';
+  return html`<div style=${{ marginTop: '3px' }}><span class=${'badge ' + cls}>${x.type} ${dh(x.montant)}${suite}</span></div>`;
+}
+
 function TableauDeBord() {
   const societes = useTable('societes', null, { col: 'nom' });
   const chantiers = useTable('chantiers', null, { col: 'created_at', asc: false });
@@ -294,103 +346,107 @@ function TableauDeBord() {
   const depenses = useTable('depenses');
   const taches = useTable('taches');
   const cheques = useTable('cheques');
+  const fournisseurs = useTable('fournisseurs', null, { col: 'nom' });
   const [filtre, setFiltre] = useState('toutes');
 
   const lignes = useMemo(() => {
     const par = (rows, id) => rows.filter((r) => r.chantier_id === id);
     return chantiers.rows.filter((c) => filtre === 'toutes' || c.societe_id === filtre).map((c) => ({
-      c, k: indicateurs(c, { cautions: par(cautions.rows, c.id), bpu: par(bpu.rows, c.id), decomptes: par(decomptes.rows, c.id), depenses: par(depenses.rows, c.id), taches: par(taches.rows, c.id) }),
+      c, caut: par(cautions.rows, c.id),
+      k: indicateurs(c, { cautions: par(cautions.rows, c.id), bpu: par(bpu.rows, c.id), decomptes: par(decomptes.rows, c.id), depenses: par(depenses.rows, c.id), taches: par(taches.rows, c.id) }),
     }));
   }, [chantiers.rows, cautions.rows, bpu.rows, decomptes.rows, depenses.rows, taches.rows, filtre]);
 
   const ids = new Set(lignes.map((l) => l.c.id));
   const somme = (f) => lignes.reduce((a, l) => a + f(l.k), 0);
-  const budget = somme((k) => k.budget), charges = somme((k) => k.charges), facture = somme((k) => k.facture);
+  const budget = somme((k) => k.budget), charges = somme((k) => k.charges), encaisse = somme((k) => k.encaisse);
   const actifs = lignes.filter((l) => !['Clôturé', 'Réception provisoire'].includes(l.c.statut)).length;
-  const nomSociete = (id) => societes.rows.find((s) => s.id === id)?.nom ?? '';
   const intitule = (id) => chantiers.rows.find((c) => c.id === id)?.intitule ?? '';
 
   const t = today(), dans7 = addDays(t, 7), dans30 = addDays(t, 30);
   const alertes = [];
-  lignes.forEach((l) => l.k.raisons.forEach((r) => alertes.push({ texte: `${l.c.intitule} : ${r}.`, grave: true })));
-  cautions.rows.filter((x) => ids.has(x.chantier_id) && x.statut !== 'Restituée' && x.date_echeance && x.date_echeance <= dans30)
-    .forEach((x) => alertes.push({ texte: `Caution ${x.type.toLowerCase()} ${intitule(x.chantier_id)} : échéance le ${dateFr(x.date_echeance)}.` }));
-  cautions.rows.filter((x) => ids.has(x.chantier_id) && x.statut === 'À restituer')
-    .forEach((x) => alertes.push({ texte: `Caution ${x.type.toLowerCase()} ${intitule(x.chantier_id)} à récupérer auprès du maître d'ouvrage.` }));
+  lignes.forEach((l) => l.k.raisons.forEach((r) => alertes.push(`${l.c.intitule} : ${r}.`)));
+  lignes.filter((l) => l.k.joursRestants !== null && l.k.joursRestants >= 0 && l.k.joursRestants <= 30).forEach((l) => alertes.push(`${l.c.intitule} : le délai se termine dans ${l.k.joursRestants} jours.`));
+  cautions.rows.filter((x) => ids.has(x.chantier_id) && x.statut === 'À restituer').forEach((x) => alertes.push(`Caution ${x.type.toLowerCase()} de ${intitule(x.chantier_id)} à récupérer (${dh(x.montant)} DH).`));
+  cautions.rows.filter((x) => ids.has(x.chantier_id) && x.statut !== 'Restituée' && x.date_echeance && x.date_echeance <= dans30).forEach((x) => alertes.push(`Caution ${x.type.toLowerCase()} de ${intitule(x.chantier_id)} : échéance le ${dateFr(x.date_echeance)}.`));
+  fournisseurs.rows.forEach((f) => {
+    const reste = depenses.rows.filter((d) => d.fournisseur_id === f.id).reduce((a, d) => a + nb(d.montant_ttc) - nb(d.montant_paye), 0);
+    if (reste > 0.5) alertes.push(`${f.nom} : reste dû ${dh(reste)} DH.`);
+  });
   const aProv = cheques.rows.filter((q) => q.statut === 'Émis' && q.date_echeance && q.date_echeance <= dans7);
-  if (aProv.length) alertes.push({ texte: `${aProv.length} chèque(s) à échéance sous 7 jours : ${dh(aProv.reduce((a, q) => a + nb(q.montant), 0))} DH à provisionner.` });
-
-  const ech = [];
-  cheques.rows.filter((q) => q.statut === 'Émis' && q.date_echeance && q.date_echeance >= addDays(t, -30))
-    .forEach((q) => ech.push({ date: q.date_echeance, texte: `Chèque n° ${q.numero}${q.beneficiaire ? ' · ' + q.beneficiaire : ''}`, detail: dh(q.montant) + ' DH' }));
-  cautions.rows.filter((x) => ids.has(x.chantier_id) && x.statut !== 'Restituée' && x.date_echeance && x.date_echeance >= t)
-    .forEach((x) => ech.push({ date: x.date_echeance, texte: `Caution ${x.type.toLowerCase()} · ${intitule(x.chantier_id)}`, detail: 'expire' }));
-  lignes.filter((l) => l.c.statut === 'En cours' && l.k.dateFin && daysBetween(t, l.k.dateFin) <= 60)
-    .forEach((l) => ech.push({ date: l.k.dateFin, texte: `Fin contractuelle · ${l.c.intitule}`, detail: '' }));
-  ech.sort((a, b) => a.date.localeCompare(b.date));
+  if (aProv.length) alertes.push(`${aProv.length} chèque(s) à échéance sous 7 jours : ${dh(aProv.reduce((a, q) => a + nb(q.montant), 0))} DH à provisionner.`);
 
   return html`
     <div class="entete">
       <div>
         <div class="discret">${new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</div>
-        <h1 style=${{ marginTop: '4px' }}>Tableau de bord des chantiers</h1>
+        <h1 style=${{ marginTop: '4px' }}>Tableau de bord</h1>
+        <div class="sous-titre">Tous vos marchés en un coup d'œil</div>
       </div>
-      <div class="rangee" role="group" aria-label="Filtrer par société">
-        <button type="button" class="pilule" aria-pressed=${String(filtre === 'toutes')} onClick=${() => setFiltre('toutes')}>Toutes</button>
-        ${societes.rows.map((s) => html`<button key=${s.id} type="button" class="pilule" aria-pressed=${String(filtre === s.id)} onClick=${() => setFiltre(s.id)}>${s.nom}</button>`)}
+      <div class="rangee">
+        <div class="rangee" role="group" aria-label="Filtrer par société">
+          <button type="button" class="pilule" aria-pressed=${String(filtre === 'toutes')} onClick=${() => setFiltre('toutes')}>Toutes</button>
+          ${societes.rows.map((s) => html`<button key=${s.id} type="button" class="pilule" aria-pressed=${String(filtre === s.id)} onClick=${() => setFiltre(s.id)}>${s.nom}</button>`)}
+        </div>
+        <a href="#/nouveau" class="btn">+ Nouveau marché</a>
       </div>
     </div>
     ${(chantiers.error || societes.error) && html`<div class="erreur">Impossible de lire la base : ${chantiers.error || societes.error}. Avez-vous exécuté le fichier SQL dans Supabase ?</div>`}
     <div class="tuiles">
-      <${Tuile} l="Chantiers actifs" v=${actifs} s=${lignes.filter((l) => l.k.aRisque).length + ' à risque'} />
-      <${Tuile} l="Budget total des marchés" v=${mdh(budget)} s="DH TTC" />
-      <${Tuile} l="Charges engagées" v=${mdh(charges)} s=${(budget ? Math.round((charges / budget) * 100) : 0) + ' % du budget'} />
-      <${Tuile} l="Facturé au maître d'ouvrage" v=${mdh(facture)} s=${'Reste à facturer : ' + mdh(budget - facture) + ' DH'} />
-      <${Tuile} l="Cautions immobilisées" v=${dh(somme((k) => k.cautionsActives))} s="DH, toutes banques" />
+      <${Tuile} l="Marchés en cours" v=${actifs} s=${lignes.length + ' marché(s) au total'} />
+      <${Tuile} l="Montant total des marchés" v=${dh(budget)} s="DH TTC" />
+      <${Tuile} l="Encaissé (reçu du client)" v=${dh(encaisse)} couleur="var(--accent)" s=${(budget ? Math.round((encaisse / budget) * 100) : 0) + ' % des marchés'} />
+      <${Tuile} l="Dépensé (charges + achats)" v=${dh(charges)} s="DH" />
+      <${Tuile} l="Cautions bloquées" v=${dh(somme((k) => k.cautionsActives))} couleur="var(--alerte)" s="DH, toutes banques" />
     </div>
+    ${alertes.length > 0 && html`<div class="bandeau"><b>⚠️ À faire</b><ul>${alertes.slice(0, 8).map((a) => html`<li>${a}</li>`)}</ul></div>`}
     <section class="carte">
-      <div class="tete"><h2>Tous les chantiers</h2><a href="#/nouveau" class="btn">+ Nouveau chantier</a></div>
       <div class="defile">
-        <table style=${{ minWidth: '1040px' }}>
-          <thead><tr><th>Chantier</th><th>Société</th><th class="d">Budget (DH)</th><th class="d">Charges (DH)</th><th style=${{ width: '210px' }}>Avancement / budget</th><th>Délai</th><th class="d">Tâches</th><th>Statut</th></tr></thead>
+        <table style=${{ minWidth: '1180px' }}>
+          <thead><tr><th>Marché</th><th>Maître d'ouvrage</th><th>Date du marché</th><th>Délai</th><th class="d">Montant</th><th>Avancement travaux</th><th>Financement (encaissé)</th><th class="d">Dépensé</th><th>Caution</th><th class="d">Bénéfice prévu</th></tr></thead>
           <tbody>
-            ${lignes.map(({ c, k }) => html`
-              <tr key=${c.id}>
-                <td><a href=${'#/chantier/' + c.id} class="fort" style=${{ color: 'var(--texte)', textDecoration: 'none' }}>${c.intitule}</a><div class="discret">${c.code}${c.maitre_ouvrage ? ' · ' + c.maitre_ouvrage : ''}</div></td>
-                <td>${nomSociete(c.societe_id)}</td>
-                <td class="d">${dh(k.budget)}</td>
+            ${lignes.map(({ c, k, caut }) => { const fin = k.budget ? (k.encaisse / k.budget) * 100 : 0; const benef = k.budget - k.charges; return html`
+              <tr key=${c.id} class="cliquable" onClick=${() => aller('/chantier/' + c.id)}>
+                <td style=${{ minWidth: '190px' }}><div class="fort">${c.numero_marche ? 'N°' + c.numero_marche + ' – ' : ''}${c.intitule}</div><div class="discret">${[c.code, c.lieu].filter(Boolean).join(' · ')}</div></td>
+                <td>${c.maitre_ouvrage ?? '—'}</td>
+                <td>${dateFr(c.date_marche)}</td>
+                <td>${c.delai_jours ? html`<div>${c.delai_jours} jours</div>` : '—'}
+                  ${k.joursRestants !== null && html`<span class=${'badge ' + (k.joursRestants < 0 ? 'b-risque' : k.joursRestants <= 30 ? 'b-alerte' : 'b-neutre')}>${k.joursRestants >= 0 ? 'reste ' + k.joursRestants + ' j' : -k.joursRestants + ' j de retard'}</span>`}</td>
+                <td class="d fort">${dh(k.budget)}</td>
+                <td style=${{ minWidth: '150px' }}><div class="ligne-barre"><${Barre} valeur=${k.avancement} couleur="var(--progres)" /><span style=${{ width: '40px', textAlign: 'right' }}>${Math.round(k.avancement)} %</span></div></td>
+                <td style=${{ minWidth: '160px' }}><div class="ligne-barre"><${Barre} valeur=${fin} couleur="var(--accent)" /><span style=${{ width: '40px', textAlign: 'right' }}>${Math.round(fin)} %</span></div><div class="discret">${dh(k.encaisse)} DH</div></td>
                 <td class="d">${dh(k.charges)}</td>
-                <td>
-                  <div class="ligne-barre"><span>Travaux ${Math.round(k.avancement)} %</span><${Barre} valeur=${k.avancement} couleur="var(--progres)" /></div>
-                  <div class="ligne-barre"><span>Budget ${Math.round(k.consommation)} %</span><${Barre} valeur=${k.consommation} couleur=${k.consommation > k.avancement + 10 ? 'var(--risque)' : 'var(--accent)'} /></div>
-                </td>
-                <td>${k.joursRestants !== null ? html`
-                  <div class="fort" style=${{ color: (k.delaiEcoulePct ?? 0) > k.avancement + 10 ? 'var(--risque)' : null }}>${k.joursRestants >= 0 ? k.joursRestants + ' j restants' : -k.joursRestants + ' j de retard'}</div>
-                  <div class="discret">${Math.round(k.delaiEcoulePct)} % du délai écoulé</div>` : html`
-                  <div class="fort">${c.delai_jours ? c.delai_jours + ' jours' : '—'}</div>
-                  <div class="discret">${c.date_os ? 'Fin : ' + dateFr(k.dateFin) : "Démarre à l'ordre de service"}</div>`}
-                </td>
-                <td class="d">${k.tachesTotal ? `${k.tachesTotal - k.tachesRestantes} / ${k.tachesTotal}` : '—'}</td>
-                <td><${Badge} statut=${c.statut} risque=${k.aRisque} /></td>
-              </tr>`)}
+                <td>${caut.length ? caut.map(badgeCaution) : html`<span class="badge b-risque">Aucune caution</span>`}</td>
+                <td class="d fort" style=${{ color: benef >= 0 ? 'var(--ok)' : 'var(--risque)' }}>${(benef >= 0 ? '+ ' : '− ') + dh(Math.abs(benef))}</td>
+              </tr>`; })}
           </tbody>
         </table>
-        ${chantiers.loading ? html`<div class="vide">Chargement…</div>` : lignes.length === 0 && html`<div class="vide">Aucun chantier pour l'instant. Créez le premier avec « Nouveau chantier ».</div>`}
+        ${chantiers.loading ? html`<div class="vide">Chargement…</div>` : lignes.length === 0 && html`<div class="vide">Aucun marché pour l'instant. Créez le premier avec « Nouveau marché ».</div>`}
       </div>
-    </section>
-    <div class="grille2">
-      <section class="carte">
-        <div class="tete"><h2>Alertes</h2></div>
-        <div class="corps">${alertes.length === 0 ? html`<div class="discret">Aucune alerte.</div>` : html`
-          <ul class="alertes">${alertes.map((a) => html`<li><span class="point" style=${{ background: a.grave ? 'var(--risque)' : '#C27A00' }}></span><span>${a.texte}</span></li>`)}</ul>`}
-        </div>
-      </section>
-      <section class="carte">
-        <div class="tete"><h2>Prochaines échéances</h2><a href="#/tresorerie" class="discret">Voir les chèques</a></div>
-        <div class="corps">${ech.length === 0 ? html`<div class="discret">Rien de prévu.</div>` :
-          ech.slice(0, 8).map((i) => html`<div class="ligne-liste"><span>${i.texte}</span><span class="discret" style=${{ whiteSpace: 'nowrap' }}>${dateFr(i.date).slice(0, 5)}${i.detail ? ' · ' + i.detail : ''}</span></div>`)}
-        </div>
-      </section>
+    </section>`;
+}
+
+// ---------- Liste des chantiers (dossiers) ----------
+function ListeChantiers() {
+  const chantiers = useTable('chantiers', null, { col: 'created_at', asc: false });
+  const depenses = useTable('depenses');
+  const decomptes = useTable('decomptes');
+  const bpu = useTable('articles_bpu');
+  const taches = useTable('taches');
+  const cautions = useTable('cautions');
+  const par = (rows, id) => rows.filter((r) => r.chantier_id === id);
+  return html`
+    <div class="entete"><div><h1>Chantiers</h1><div class="sous-titre">Un dossier par marché : charges, achats, financement, caution.</div></div><a href="#/nouveau" class="btn">+ Nouveau marché</a></div>
+    <div class="dossiers">
+      ${chantiers.rows.map((c) => { const k = indicateurs(c, { cautions: par(cautions.rows, c.id), bpu: par(bpu.rows, c.id), decomptes: par(decomptes.rows, c.id), depenses: par(depenses.rows, c.id), taches: par(taches.rows, c.id) }); return html`
+        <a class="dossier" href=${'#/chantier/' + c.id} key=${c.id}>
+          <span class="ic">📁</span>
+          <span class="nom">${c.numero_marche ? 'N°' + c.numero_marche + ' – ' : ''}${c.intitule}</span>
+          <span class="discret">${c.maitre_ouvrage ?? ''}${c.date_marche ? ' · ' + dateFr(c.date_marche) : ''}</span>
+          <span class="discret" style=${{ marginTop: '8px' }}>Dépensé</span><span class="mt" style=${{ marginTop: 0 }}>${dh(k.charges)} <small class="discret">DH</small></span>
+          <div class="ligne-barre" style=${{ marginTop: '6px' }}><span style=${{ width: 'auto' }}>Avancement</span><${Barre} valeur=${k.avancement} couleur="var(--progres)" /><span>${Math.round(k.avancement)} %</span></div>
+        </a>`; })}
+      <a class="dossier ajout" href="#/nouveau">+ Nouveau marché</a>
     </div>`;
 }
 
@@ -407,7 +463,8 @@ function ChantierForm({ initial = {}, onSave, libelle }) {
       maitre_ouvrage: str(f.get('maitre_ouvrage')), numero_marche: str(f.get('numero_marche')), lieu: str(f.get('lieu')),
       montant_marche: num(f.get('montant_marche')), taux_tva: num(f.get('taux_tva')), taux_retenue: num(f.get('taux_retenue')),
       date_os: str(f.get('date_os')), delai_jours: str(f.get('delai_jours')) ? num(f.get('delai_jours')) : null,
-      jours_arret: num(f.get('jours_arret')), statut: String(f.get('statut') || '') || 'Soumission', responsable: str(f.get('responsable')),
+      jours_arret: num(f.get('jours_arret')), date_marche: str(f.get('date_marche')),
+      avancement_manuel: str(f.get('avancement_manuel')) ? Math.max(0, Math.min(100, num(f.get('avancement_manuel')))) : null, statut: String(f.get('statut') || '') || 'Soumission', responsable: str(f.get('responsable')),
     });
     setAttente(false);
   }
@@ -422,13 +479,15 @@ function ChantierForm({ initial = {}, onSave, libelle }) {
         </select>
       </${Champ}>
       <${Champ} id="maitre_ouvrage" label="Maître d'ouvrage"><input id="maitre_ouvrage" name="maitre_ouvrage" value=${i.maitre_ouvrage ?? ''} /></${Champ}>
-      <${Champ} id="numero_marche" label="N° de marché / AO"><input id="numero_marche" name="numero_marche" value=${i.numero_marche ?? ''} /></${Champ}>
+      <${Champ} id="numero_marche" label="N° du marché"><input id="numero_marche" name="numero_marche" value=${i.numero_marche ?? ''} /></${Champ}>
       <${Champ} id="lieu" label="Lieu"><input id="lieu" name="lieu" value=${i.lieu ?? ''} /></${Champ}>
       <${Champ} id="responsable" label="Responsable"><input id="responsable" name="responsable" value=${i.responsable ?? ''} /></${Champ}>
       <${Champ} id="montant_marche" label="Montant du marché TTC (DH)"><input id="montant_marche" name="montant_marche" inputmode="decimal" required value=${i.montant_marche ?? ''} /></${Champ}>
       <${Champ} id="taux_tva" label="TVA (%)"><input id="taux_tva" name="taux_tva" inputmode="decimal" value=${i.taux_tva ?? 20} /></${Champ}>
       <${Champ} id="taux_retenue" label="Retenue de garantie (%)"><input id="taux_retenue" name="taux_retenue" inputmode="decimal" value=${i.taux_retenue ?? 7} /></${Champ}>
       <${Champ} id="statut" label="Statut"><select id="statut" name="statut" value=${i.statut ?? 'Soumission'}>${STATUTS_CHANTIER.map((s) => html`<option value=${s} selected=${s === (i.statut ?? 'Soumission')}>${s}</option>`)}</select></${Champ}>
+      <${Champ} id="date_marche" label="Date du marché"><input id="date_marche" name="date_marche" type="date" value=${i.date_marche ?? ''} /></${Champ}>
+      <${Champ} id="avancement_manuel" label="Avancement des travaux (%)"><input id="avancement_manuel" name="avancement_manuel" inputmode="numeric" placeholder="vide = calcul automatique" value=${i.avancement_manuel ?? ''} /></${Champ}>
       <${Champ} id="date_os" label="Date de l'ordre de service"><input id="date_os" name="date_os" type="date" value=${i.date_os ?? ''} /></${Champ}>
       <${Champ} id="delai_jours" label="Délai d'exécution (jours)"><input id="delai_jours" name="delai_jours" inputmode="numeric" value=${i.delai_jours ?? ''} /></${Champ}>
       <${Champ} id="jours_arret" label="Jours d'arrêt (OS d'arrêt)"><input id="jours_arret" name="jours_arret" inputmode="numeric" value=${i.jours_arret ?? 0} /></${Champ}>
@@ -439,12 +498,12 @@ function ChantierForm({ initial = {}, onSave, libelle }) {
 function NouveauChantier() {
   return html`
     <div>
-      <a href="#/" style=${{ fontSize: '13px', textDecoration: 'none' }}>← Tous les chantiers</a>
-      <h1 style=${{ marginTop: '8px' }}>Nouveau chantier</h1>
+      <a href="#/chantiers" style=${{ fontSize: '13px', textDecoration: 'none' }}>← Tous les chantiers</a>
+      <h1 style=${{ marginTop: '8px' }}>Nouveau marché</h1>
       <div class="sous-titre">Le bordereau des prix, les cautions et les dépenses s'ajoutent ensuite depuis la fiche du chantier.</div>
     </div>
     <section class="carte"><div class="corps">
-      <${ChantierForm} libelle="Créer le chantier" onSave=${async (v) => {
+      <${ChantierForm} libelle="Créer le marché" onSave=${async (v) => {
         const { data, error } = await sb.from('chantiers').insert(v).select('id').single();
         if (error) return alert('Erreur : ' + error.message);
         aller('/chantier/' + data.id);
@@ -452,11 +511,12 @@ function NouveauChantier() {
     </div></section>`;
 }
 
-// ---------- Fiche chantier ----------
-const ONGLETS = ['Synthèse', 'BPU et avancement', 'Décomptes', 'Dépenses', 'Cautions', 'Planning', 'Informations'];
+// ---------- Fiche chantier (dossier) ----------
+const ONGLETS = ['Dossier', 'Détail des charges', 'Achats & produits', 'Financement', 'Caution', 'Avancement', 'Planning', 'Informations'];
 
 function Fiche({ id }) {
-  const [onglet, setOnglet] = useState('Synthèse');
+  const [onglet, setOnglet] = useState('Dossier');
+  const [catChoisie, setCatChoisie] = useState('Toutes');
   const par = { col: 'chantier_id', val: id };
   const chantier = useTable('chantiers', { col: 'id', val: id });
   const societes = useTable('societes');
@@ -466,96 +526,337 @@ function Fiche({ id }) {
   const decomptes = useTable('decomptes', par, { col: 'numero' });
   const depenses = useTable('depenses', par, { col: 'date', asc: false });
   const taches = useTable('taches', par, { col: 'debut' });
+  const cats = useCategories(depenses.rows);
   const c = chantier.rows[0];
   if (chantier.loading) return html`<div class="discret">Chargement…</div>`;
   if (!c) return html`<div class="erreur">Chantier introuvable. <a href="#/">Retour au tableau de bord</a></div>`;
   const k = indicateurs(c, { cautions: cautions.rows, bpu: bpu.rows, decomptes: decomptes.rows, depenses: depenses.rows, taches: taches.rows });
   const societe = societes.rows.find((s) => s.id === c.societe_id)?.nom;
+  const ouvrir = (o, cat) => { if (cat) setCatChoisie(cat); setOnglet(o); };
+  const titre = (c.numero_marche ? 'Marché N°' + c.numero_marche + ' – ' : '') + c.intitule;
   return html`
     <div style=${{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-      <a href="#/" style=${{ fontSize: '13px', textDecoration: 'none' }}>← Tous les chantiers</a>
-      <div class="rangee" style=${{ gap: '10px' }}><h1>${c.intitule}</h1><${Badge} statut=${c.statut} />${k.aRisque && html`<span class="badge b-risque">À risque</span>`}</div>
-      <div class="sous-titre" style=${{ marginTop: 0 }}>${[c.code, c.numero_marche && 'Marché n° ' + c.numero_marche, societe, c.maitre_ouvrage && "Maître d'ouvrage : " + c.maitre_ouvrage].filter(Boolean).join(' · ')}</div>
+      <a href="#/chantiers" class="no-print" style=${{ fontSize: '13px', textDecoration: 'none' }}>← Tous les chantiers</a>
+      <div class="entete">
+        <div>
+          <div class="rangee" style=${{ gap: '10px' }}><h1>📁 ${titre}</h1><${Badge} statut=${c.statut} />${k.aRisque && html`<span class="badge b-risque">À risque</span>`}</div>
+          <div class="sous-titre">${[c.maitre_ouvrage, societe, c.date_marche && 'signé le ' + dateFr(c.date_marche), c.delai_jours && 'délai ' + c.delai_jours + ' jours', c.date_os && 'ordre de service ' + dateFr(c.date_os)].filter(Boolean).join(' · ')}</div>
+        </div>
+        <div class="rangee no-print">
+          <button type="button" class="btn secondaire" onClick=${() => ouvrir('Détail des charges')}>🧾 Ajouter une charge</button>
+          <button type="button" class="btn" onClick=${() => ouvrir('Achats & produits')}>🛒 Ajouter un achat</button>
+        </div>
+      </div>
     </div>
-    <div class="onglets" role="tablist">
+    <div class="onglets no-print" role="tablist">
       ${ONGLETS.map((o) => html`<button type="button" role="tab" aria-selected=${String(onglet === o)} onClick=${() => setOnglet(o)}>${o}</button>`)}
     </div>
-    ${onglet === 'Synthèse' && html`<${Synthese} c=${c} k=${k} depenses=${depenses.rows} cautions=${cautions.rows} />`}
-    ${onglet === 'BPU et avancement' && html`<${Bpu} chantierId=${c.id} rows=${bpu.rows} reload=${bpu.reload} />`}
-    ${onglet === 'Décomptes' && html`<${Decomptes} c=${c} rows=${decomptes.rows} reload=${decomptes.reload} />`}
-    ${onglet === 'Dépenses' && html`<${Depenses} chantierId=${c.id} rows=${depenses.rows} fournisseurs=${fournisseurs.rows} reload=${depenses.reload} />`}
-    ${onglet === 'Cautions' && html`<${Cautions} c=${c} rows=${cautions.rows} reload=${cautions.reload} />`}
+    ${onglet === 'Dossier' && html`<${Dossier} c=${c} k=${k} depenses=${depenses.rows} cautions=${cautions.rows} cats=${cats} ouvrir=${ouvrir} />`}
+    ${onglet === 'Détail des charges' && html`<${DetailCharges} key=${catChoisie} titre=${titre} chantierId=${c.id} rows=${depenses.rows} fournisseurs=${fournisseurs.rows} reload=${depenses.reload} cats=${cats} catInitiale=${catChoisie} />`}
+    ${onglet === 'Achats & produits' && html`<${Achats} chantierId=${c.id} />`}
+    ${onglet === 'Financement' && html`<${Decomptes} c=${c} rows=${decomptes.rows} reload=${decomptes.reload} />`}
+    ${onglet === 'Caution' && html`<${Cautions} c=${c} rows=${cautions.rows} reload=${cautions.reload} />`}
+    ${onglet === 'Avancement' && html`
+      <section class="carte"><div class="corps rangee" style=${{ justifyContent: 'space-between' }}>
+        <div><div class="fort">Avancement des travaux : ${Math.round(k.avancement)} %</div>
+          <div class="discret">${c.avancement_manuel !== null && c.avancement_manuel !== undefined ? 'Saisi à la main.' : 'Calculé à partir du bordereau des prix (ou du planning).'}</div></div>
+        <label class="rangee">Saisir à la main :
+          <input aria-label="Avancement saisi à la main" inputmode="numeric" placeholder="vide = automatique" style=${{ width: '170px' }} value=${c.avancement_manuel ?? ''}
+            onBlur=${async (e) => { const v = str(e.target.value) ? Math.max(0, Math.min(100, num(e.target.value))) : null; if (v !== (c.avancement_manuel ?? null) && await ecrire(sb.from('chantiers').update({ avancement_manuel: v }).eq('id', c.id))) await chantier.reload(); }} /> %</label>
+      </div></section>
+      <${Bpu} chantierId=${c.id} rows=${bpu.rows} reload=${bpu.reload} />`}
     ${onglet === 'Planning' && html`<${Planning} c=${c} rows=${taches.rows} bpu=${bpu.rows} reload=${taches.reload} />`}
     ${onglet === 'Informations' && html`
       <section class="carte"><div class="corps" style=${{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
         <${ChantierForm} initial=${c} libelle="Enregistrer" onSave=${async (v) => {
           const { error } = await sb.from('chantiers').update(v).eq('id', c.id);
           if (error) return alert('Erreur : ' + error.message);
-          await chantier.reload(); setOnglet('Synthèse');
+          await chantier.reload(); setOnglet('Dossier');
         }} />
         <div style=${{ borderTop: '1px solid var(--bord)', paddingTop: '16px' }}>
           <button type="button" class="btn danger" onClick=${async () => {
-            if (!confirm('Supprimer ce chantier et toutes ses données (BPU, dépenses, cautions, décomptes, planning) ? Cette action est définitive.')) return;
+            if (!confirm('Supprimer ce chantier et toutes ses données (charges, achats, cautions, décomptes, planning) ? Cette action est définitive.')) return;
             const { error } = await sb.from('chantiers').delete().eq('id', c.id);
             if (error) return alert('Erreur : ' + error.message);
-            aller('/');
+            aller('/chantiers');
           }}>Supprimer le chantier</button>
         </div>
       </div></section>`}`;
 }
 
-function Synthese({ c, k, depenses, cautions }) {
-  const fraisC = cautions.reduce((a, x) => a + nb(x.frais), 0);
-  const parCat = CATEGORIES_DEPENSE.map((cat) => ({ cat, v: depenses.filter((d) => d.categorie === cat).reduce((a, d) => a + nb(d.montant_ttc), 0) }));
-  if (fraisC) parCat.push({ cat: 'Frais de cautions', v: fraisC });
-  const max = Math.max(1, ...parCat.map((p) => p.v));
-  const retard = (k.delaiEcoulePct ?? 0) > k.avancement + 10;
-  const Ligne = (label, valeur, pctv, couleur) => html`<div>
-    <div style=${{ display: 'flex', justifyContent: 'space-between' }}><span>${label}</span><span class="fort">${valeur}</span></div>
-    <div style=${{ marginTop: '6px' }}><${Barre} grande valeur=${pctv} couleur=${couleur} /></div></div>`;
+function Dossier({ c, k, depenses, cautions, cats, ouvrir }) {
+  const total = (nom) => depenses.filter((d) => d.categorie === nom).reduce((a, d) => a + nb(d.montant_ttc), 0);
+  const fin = k.budget ? (k.encaisse / k.budget) * 100 : 0;
+  const cautionsActives = cautions.filter((x) => x.statut !== 'Restituée');
   return html`
     <div class="tuiles">
-      <${Tuile} l="Montant du marché" v=${dh(k.budget)} s=${'DH TTC, TVA ' + c.taux_tva + ' %'} />
-      <${Tuile} l="Facturé (décomptes)" v=${dh(k.facture)} s=${'Encaissé : ' + dh(k.encaisse) + ' DH'} />
-      <${Tuile} l="Charges engagées" v=${dh(k.charges)} s=${'Payé : ' + dh(k.paye) + ' DH'} />
-      <${Tuile} l="Marge actuelle" v=${(k.marge >= 0 ? '+' : '') + dh(k.marge)} couleur=${k.marge >= 0 ? 'var(--ok)' : 'var(--risque)'} s=${k.margePct === null ? 'Pas encore facturé' : k.margePct.toFixed(1).replace('.', ',') + ' % du facturé'} />
-      <${Tuile} l="Reste à faire" v=${dh(k.resteAFacturer)} s=${'DH à facturer' + (k.tachesTotal ? ' · ' + k.tachesRestantes + ' tâches' : '')} />
+      <${Tuile} l="Montant du marché" v=${dh(k.budget)} s="DH TTC" />
+      <div class="tuile"><div class="l">Encaissé</div><div class="v" style=${{ color: 'var(--accent)' }}>${dh(k.encaisse)}</div><div style=${{ marginTop: '8px' }}><${Barre} grande valeur=${fin} couleur="var(--accent)" /></div><div class="s">${Math.round(fin)} % du marché</div></div>
+      <${Tuile} l="Total dépensé" v=${dh(k.charges)} s=${'Bénéfice prévu : ' + dh(k.budget - k.charges) + ' DH'} />
+      <div class="tuile"><div class="l">Avancement</div><div class="v" style=${{ color: 'var(--progres)' }}>${Math.round(k.avancement)} %</div><div style=${{ marginTop: '8px' }}><${Barre} grande valeur=${k.avancement} couleur="var(--progres)" /></div></div>
+      <div class="tuile" style=${{ cursor: 'pointer' }} onClick=${() => ouvrir('Caution')}><div class="l">Caution</div>
+        ${cautionsActives.length ? cautionsActives.map((x) => html`<div class="fort" style=${{ marginTop: '6px' }}>${x.type} : ${dh(x.montant)} DH</div>`) : html`<div class="v" style=${{ fontSize: '16px' }}>Aucune</div>`}
+        <div class="s">${cautions.filter((x) => x.statut === 'À restituer').length ? 'à récupérer' : cautionsActives.length ? 'déposée' : 'cliquez pour en ajouter'}</div></div>
     </div>
-    <div class="grille2">
-      <section class="carte">
-        <div class="tete"><h2>Délai d'exécution</h2></div>
-        <div class="corps">
-          <div style=${{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: '12px', fontSize: '13px' }}>
-            <div><div class="discret">Ordre de service</div><div class="fort" style=${{ marginTop: '4px' }}>${dateFr(c.date_os)}</div></div>
-            <div><div class="discret">Délai contractuel</div><div class="fort" style=${{ marginTop: '4px' }}>${c.delai_jours ? c.delai_jours + ' jours' : '—'}</div></div>
-            <div><div class="discret">Fin prévue</div><div class="fort" style=${{ marginTop: '4px' }}>${dateFr(k.dateFin)}</div></div>
-          </div>
-          <div style=${{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '13px' }}>
-            ${k.delaiEcoulePct !== null && Ligne('Délai écoulé', Math.round(k.delaiEcoulePct) + ' % · ' + (k.joursRestants >= 0 ? k.joursRestants + ' j restants' : -k.joursRestants + ' j de retard'), k.delaiEcoulePct, retard ? 'var(--risque)' : 'var(--texte-2)')}
-            ${Ligne('Travaux réalisés', Math.round(k.avancement) + ' %', k.avancement, 'var(--progres)')}
-            ${Ligne('Budget consommé', Math.round(k.consommation) + ' %', k.consommation, 'var(--accent)')}
-          </div>
-          ${nb(c.jours_arret) > 0 && html`<p class="discret" style=${{ marginBottom: 0 }}>${c.jours_arret} jours d'arrêt de travaux déjà ajoutés au délai.</p>`}
-          ${k.raisons.length > 0 && html`<div class="erreur" style=${{ marginTop: '16px' }}>${k.raisons.join(' ; ')}.</div>`}
-        </div>
-      </section>
-      <section class="carte">
-        <div class="tete"><h2>Répartition des charges</h2></div>
-        <div class="corps">
-          ${parCat.map((p) => html`<div style=${{ display: 'grid', gridTemplateColumns: '140px minmax(0,1fr) 100px', alignItems: 'center', gap: '12px', fontSize: '13px', padding: '7px 0' }}>
-            <span>${p.cat}</span><div class="barre" style=${{ height: '12px' }}><div style=${{ width: (p.v / max) * 100 + '%', background: 'var(--accent)' }}></div></div><span class="d fort">${dh(p.v)}</span></div>`)}
-          <div style=${{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--bord)', marginTop: '10px', paddingTop: '12px', fontWeight: 700 }}><span>Total engagé</span><span>${dh(k.charges)} DH</span></div>
-        </div>
-      </section>
-    </div>
-    <div class="grille2">
-      <section class="carte"><div class="tete"><h2>Cautions</h2></div><div class="corps">
-        ${cautions.length === 0 ? html`<div class="discret">Aucune caution enregistrée.</div>` : cautions.map((x) => html`<div class="ligne-liste"><span><b>${x.type}</b>${x.banque ? ' · ' + x.banque : ''} · ${dh(x.montant)} DH</span><${Badge} statut=${x.statut} /></div>`)}
-      </div></section>
-      <section class="carte"><div class="tete"><h2>Dernières dépenses</h2></div><div class="corps">
-        ${depenses.length === 0 ? html`<div class="discret">Aucune dépense enregistrée.</div>` : depenses.slice(0, 6).map((d) => html`<div class="ligne-liste"><span>${dateFr(d.date).slice(0, 5)} · ${d.categorie} · ${d.libelle}</span><span class="fort">${dh(d.montant_ttc)}</span></div>`)}
-      </div></section>
+    <div class="dossiers">
+      ${cats.liste.map((cat) => { const v = total(cat.nom); return html`
+        <button type="button" class=${'dossier' + (v ? '' : ' vide-cat')} onClick=${() => ouvrir('Détail des charges', cat.nom)}>
+          <span class="ic">${cat.icone}</span><span class="nom">${cat.nom}</span><span class="discret">${cat.description || ' '}</span>
+          <span class="mt">${dh(v)} <small class="discret">DH</small></span>
+        </button>`; })}
+      <button type="button" class="dossier ajout" onClick=${() => cats.tableOk ? nouvelleCategorie(cats.reload) : alert("Lancez d'abord le fichier migration-v2.sql dans Supabase.")}>+ Nouvelle catégorie</button>
     </div>`;
+}
+
+// ---------- Détail des charges (récap par catégorie + détail groupé) ----------
+function exporterExcel(nomFichier, feuilles) {
+  const wb = XLSX.utils.book_new();
+  feuilles.forEach(([nom, lignes]) => XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(lignes), nom.slice(0, 31)));
+  XLSX.writeFile(wb, nomFichier.replace(/[\\/:*?"<>|]/g, '-') + '.xlsx');
+}
+
+function DetailCharges({ titre, chantierId, rows, fournisseurs, reload, cats, catInitiale }) {
+  const [cat, setCat] = useState(catInitiale || 'Toutes');
+  const [etat, setEtat] = useState('Tous');
+  const [cherche, setCherche] = useState('');
+  const [form, setForm] = useState(false);
+  const nomF = (id) => fournisseurs.find((f) => f.id === id)?.nom ?? '';
+  const q = cherche.trim().toLowerCase();
+  const vis = rows.filter((d) => (cat === 'Toutes' || d.categorie === cat) && (etat === 'Tous' || (d.etat ?? 'Sûr') === etat)
+    && (!q || (d.libelle + ' ' + nomF(d.fournisseur_id) + ' ' + (d.numero_facture ?? '')).toLowerCase().includes(q)))
+    .sort((x, y) => (y.date || '').localeCompare(x.date || '') || (x.numero_facture || '').localeCompare(y.numero_facture || '') || (x.libelle || '').localeCompare(y.libelle || '', 'fr', { numeric: true }));
+  const groupes = cats.liste.map((c) => ({ ...c, lignes: vis.filter((d) => d.categorie === c.nom) })).filter((g) => g.lignes.length)
+    .map((g) => ({ ...g, total: g.lignes.reduce((a, d) => a + nb(d.montant_ttc), 0) })).sort((a, b) => b.total - a.total);
+  const recap = cats.liste.map((c) => { const l = rows.filter((d) => d.categorie === c.nom); return { ...c, n: l.length, total: l.reduce((a, d) => a + nb(d.montant_ttc), 0) }; })
+    .filter((g) => g.n).sort((a, b) => b.total - a.total);
+  const T = recap.reduce((a, g) => a + g.total, 0), N = recap.reduce((a, g) => a + g.n, 0);
+  const totalVis = vis.reduce((a, d) => a + nb(d.montant_ttc), 0);
+  const [ouverts, setOuverts] = useState(() => new Set(cat !== 'Toutes' ? [cat] : []));
+  const tousOuverts = cat !== 'Toutes' || q || etat !== 'Tous';
+  const estOuvert = (nom) => tousOuverts || ouverts.has(nom);
+  const basculer = (nom) => { const n = new Set(ouverts); n.has(nom) ? n.delete(nom) : n.add(nom); setOuverts(n); };
+
+  async function ajouter(e) {
+    const formEl = e.currentTarget, f = lireForm(e);
+    const qte = str(f.get('quantite')) ? num(f.get('quantite')) : null, pu = str(f.get('prix_unitaire')) ? num(f.get('prix_unitaire')) : null;
+    const montant = str(f.get('montant_ttc')) ? num(f.get('montant_ttc')) : (qte ?? 0) * (pu ?? 0);
+    if (await ecrire(sb.from('depenses').insert({
+      chantier_id: chantierId, categorie: String(f.get('categorie')), libelle: String(f.get('libelle')), fournisseur_id: str(f.get('fournisseur_id')),
+      numero_facture: str(f.get('numero_facture')), date: String(f.get('date')), quantite: qte, prix_unitaire: pu, montant_ttc: montant,
+      montant_paye: f.get('paye') ? montant : 0, etat: String(f.get('etat') || 'Sûr'),
+    }))) { formEl.reset(); await reload(); }
+  }
+  const majEtat = async (d) => { if (await ecrire(sb.from('depenses').update({ etat: (d.etat ?? 'Sûr') === 'Sûr' ? 'À vérifier' : 'Sûr' }).eq('id', d.id))) await reload(); };
+  const majCat = async (d, v) => { if (v !== d.categorie && await ecrire(sb.from('depenses').update({ categorie: v }).eq('id', d.id))) await reload(); };
+  const excel = () => exporterExcel('Charges ' + titre, [
+    ['Récapitulatif', [['Catégorie', 'Lignes', 'Total (DH)', 'Part'], ...recap.map((g) => [g.nom, g.n, g.total, T ? Math.round((g.total / T) * 100) + ' %' : '']), ['TOTAL', N, T, '100 %']]],
+    ['Détail', [['Date', 'Catégorie', 'Libellé', 'Fournisseur', 'N° facture', 'Quantité', 'Prix unitaire', 'Montant (DH)', 'Payé (DH)', 'État'],
+      ...rows.map((d) => [dateFr(d.date), d.categorie, d.libelle, nomF(d.fournisseur_id), d.numero_facture ?? '', d.quantite ?? '', d.prix_unitaire ?? '', nb(d.montant_ttc), nb(d.montant_paye), d.etat ?? 'Sûr'])]],
+  ]);
+
+  return html`
+    <div class="entete">
+      <div><h2 style=${{ fontSize: '20px' }}>🧾 Détail des charges</h2><div class="sous-titre">${N} charges notées · ${dh(T)} DH · toutes catégories</div></div>
+      <div class="rangee no-print">
+        <button type="button" class="btn secondaire" onClick=${excel}>⬇️ Excel</button>
+        <button type="button" class="btn secondaire" onClick=${() => window.print()}>🖨️ Imprimer</button>
+        <button type="button" class="btn" onClick=${() => setForm(!form)}>${form ? 'Fermer' : '+ Ajouter une charge'}</button>
+      </div>
+    </div>
+    ${form && html`<section class="carte no-print"><div class="corps">
+      <form class="formulaire" onSubmit=${ajouter}>
+        <${Champ} id="e-c" label="Catégorie"><select id="e-c" name="categorie">${cats.liste.map((c) => html`<option value=${c.nom} selected=${c.nom === cat}>${c.icone} ${c.nom}</option>`)}</select></${Champ}>
+        <${Champ} id="e-l" label="Libellé" large><input id="e-l" name="libelle" required placeholder="Ex. Gasoil Missour – Talsint" /></${Champ}>
+        <${Champ} id="e-d" label="Date"><input id="e-d" name="date" type="date" required value=${today()} /></${Champ}>
+        <${Champ} id="e-f" label="Payé à / fournisseur"><select id="e-f" name="fournisseur_id"><option value="">—</option>${fournisseurs.map((f) => html`<option value=${f.id}>${f.nom}</option>`)}</select></${Champ}>
+        <${Champ} id="e-q" label="Quantité (facultatif)"><input id="e-q" name="quantite" inputmode="decimal" /></${Champ}>
+        <${Champ} id="e-pu" label="Prix unitaire (facultatif)"><input id="e-pu" name="prix_unitaire" inputmode="decimal" /></${Champ}>
+        <${Champ} id="e-m" label="Montant (DH)"><input id="e-m" name="montant_ttc" inputmode="decimal" placeholder="vide = quantité × prix" /></${Champ}>
+        <${Champ} id="e-n" label="N° facture / bon"><input id="e-n" name="numero_facture" /></${Champ}>
+        <${Champ} id="e-et" label="État"><select id="e-et" name="etat">${ETATS.map((x) => html`<option value=${x}>${x}</option>`)}</select></${Champ}>
+        <div class="champ"><label style=${{ display: 'flex', gap: '8px', alignItems: 'center', minHeight: '40px' }}><input type="checkbox" name="paye" defaultChecked /> Déjà payé</label></div>
+        <div><button class="btn" type="submit">+ Ajouter</button></div>
+      </form></div></section>`}
+    <div class="cote">
+      <section class="carte">
+        <div class="tete"><h2>Récapitulatif par catégorie</h2></div>
+        <div class="defile"><table class="serre">
+          <thead><tr><th>Catégorie</th><th class="d">Lignes</th><th class="d">Total (DH)</th><th>Part</th></tr></thead>
+          <tbody>
+            ${recap.map((g) => { const p = T ? (g.total / T) * 100 : 0; return html`
+              <tr class="cliquable" onClick=${() => setCat(cat === g.nom ? 'Toutes' : g.nom)} style=${cat === g.nom ? { outline: '2px solid var(--accent)' } : null}>
+                <td>${g.icone} ${g.nom}</td><td class="d">${g.n}</td><td class="d fort">${dh(g.total)}</td>
+                <td style=${{ width: '100px' }}><div class="ligne-barre"><${Barre} valeur=${p} couleur="var(--accent)" /><span style=${{ width: '38px', textAlign: 'right' }}>${Math.round(p)} %</span></div></td>
+              </tr>`; })}
+            <tr class="total"><td>TOTAL</td><td class="d">${N}</td><td class="d">${dh(T)}</td><td>100 %</td></tr>
+          </tbody>
+        </table>${recap.length === 0 && html`<div class="vide">Aucune charge pour l'instant.</div>`}</div>
+      </section>
+      <section class="carte">
+        <div class="tete no-print">
+          <div class="rangee">
+            <select aria-label="Catégorie" style=${{ width: 'auto' }} value=${cat} onChange=${(e) => setCat(e.target.value)}>
+              <option value="Toutes" selected=${cat === 'Toutes'}>Catégorie : toutes</option>
+              ${cats.liste.map((c) => html`<option value=${c.nom} selected=${c.nom === cat}>${c.icone} ${c.nom}</option>`)}
+            </select>
+            <select aria-label="État" style=${{ width: 'auto' }} value=${etat} onChange=${(e) => setEtat(e.target.value)}>
+              ${['Tous', ...ETATS].map((x) => html`<option value=${x} selected=${x === etat}>${x === 'Tous' ? 'État : tous' : x}</option>`)}
+            </select>
+            <input type="search" aria-label="Chercher" placeholder="🔍 Chercher" style=${{ width: '200px' }} value=${cherche} onInput=${(e) => setCherche(e.target.value)} />
+          </div>
+          <span class="discret">${vis.length} ligne(s) · ${dh(totalVis)} DH</span>
+        </div>
+        <div class="defile"><table style=${{ minWidth: '760px' }}>
+          <thead><tr><th>Date</th><th>Libellé</th><th>Payé à / fournisseur</th><th class="d">Montant (DH)</th><th>État</th><th class="no-print"></th></tr></thead>
+          <tbody>
+            ${groupes.map((g) => html`
+              <tr class="groupe" onClick=${() => basculer(g.nom)}><td colspan="3">${estOuvert(g.nom) ? '▾' : '▸'} ${g.icone} ${g.nom} <span class="discret" style=${{ fontWeight: 500 }}>· ${g.lignes.length} ligne(s)</span></td><td class="d">${dh(g.total)}</td><td colspan="2"></td></tr>
+              ${estOuvert(g.nom) && g.lignes.map((d) => html`
+                <tr key=${d.id}>
+                  <td style=${{ whiteSpace: 'nowrap' }}>${dateFr(d.date)}</td>
+                  <td style=${{ minWidth: '220px' }}>${d.libelle}${d.quantite ? html`<div class="discret">${d.quantite} × ${dh(d.prix_unitaire)} DH</div>` : ''}</td>
+                  <td>${nomF(d.fournisseur_id) || '—'}</td>
+                  <td class="d fort">${dh(d.montant_ttc)}${nb(d.montant_ttc) - nb(d.montant_paye) > 0.5 ? html`<div class="discret" style=${{ color: 'var(--alerte)' }}>reste ${dh(nb(d.montant_ttc) - nb(d.montant_paye))}</div>` : ''}</td>
+                  <td><button type="button" title="Cliquer pour changer" class=${'badge clic ' + ((d.etat ?? 'Sûr') === 'Sûr' ? 'b-ok' : 'b-alerte')} onClick=${() => majEtat(d)}>${d.etat ?? 'Sûr'}</button></td>
+                  <td class="no-print" style=${{ whiteSpace: 'nowrap' }}>
+                    <select aria-label=${'Changer la catégorie de ' + d.libelle} title="Changer de catégorie" style=${{ width: '34px', minHeight: '30px', fontSize: '12px', padding: '2px' }} value=${d.categorie} onChange=${(e) => majCat(d, e.target.value)}>${cats.liste.map((c) => html`<option value=${c.nom} selected=${c.nom === d.categorie}>${c.nom}</option>`)}</select>
+                    <${BtnSuppr} label=${d.libelle} onClick=${() => supprimer('depenses', d.id, 'Supprimer cette charge ?', reload)} />
+                  </td>
+                </tr>`)}`)}
+          </tbody>
+        </table>${vis.length === 0 && html`<div class="vide">Aucune charge${cat !== 'Toutes' ? ' dans « ' + cat + ' »' : ''}.</div>`}</div>
+      </section>
+    </div>`;
+}
+
+// ---------- Achats de produits et matières premières ----------
+function Achats({ chantierId }) {
+  const depenses = useTable('depenses', chantierId ? { col: 'chantier_id', val: chantierId } : null, { col: 'date', asc: false });
+  const fournisseurs = useTable('fournisseurs', null, { col: 'nom' });
+  const chantiers = useTable('chantiers', null, { col: 'intitule' });
+  const cheques = useTable('cheques', null, { col: 'date_emission' });
+  const cats = useCategories(depenses.rows);
+  const [fCh, setFCh] = useState(chantierId || 'Tous');
+  const [fFo, setFFo] = useState('Tous');
+  const [fCat, setFCat] = useState('Toutes');
+  const [cherche, setCherche] = useState('');
+  const [form, setForm] = useState(false);
+  const nomF = (id) => fournisseurs.rows.find((f) => f.id === id)?.nom ?? '';
+  const nomC = (id) => { const c = chantiers.rows.find((x) => x.id === id); return c ? (c.numero_marche ? 'N°' + c.numero_marche + ' ' : '') + c.intitule : ''; };
+  const achats = depenses.rows.filter((d) => d.fournisseur_id || d.quantite);
+  const q = cherche.trim().toLowerCase();
+  const vis = achats.filter((d) => (fCh === 'Tous' || d.chantier_id === fCh) && (fFo === 'Tous' || d.fournisseur_id === fFo) && (fCat === 'Toutes' || d.categorie === fCat) && (!q || d.libelle.toLowerCase().includes(q)))
+    .sort((x, y) => (y.date || '').localeCompare(x.date || '') || (x.numero_facture || '').localeCompare(y.numero_facture || '') || (x.libelle || '').localeCompare(y.libelle || '', 'fr', { numeric: true }));
+  const situation = fournisseurs.rows.map((f) => {
+    const l = achats.filter((d) => d.fournisseur_id === f.id && (fCh === 'Tous' || d.chantier_id === fCh));
+    const achete = l.reduce((a, d) => a + nb(d.montant_ttc), 0), paye = l.reduce((a, d) => a + nb(d.montant_paye), 0);
+    return { f, achete, reste: achete - paye };
+  }).filter((s) => s.achete > 0).sort((a, b) => b.achete - a.achete);
+  const tot = situation.reduce((a, s) => ({ achete: a.achete + s.achete, reste: a.reste + s.reste }), { achete: 0, reste: 0 });
+  const chequesFo = fFo === 'Tous' ? [] : cheques.rows.filter((x) => x.fournisseur_id === fFo);
+  const basculerPaye = async (d) => { const p = nb(d.montant_paye) >= nb(d.montant_ttc) - 0.5 ? 0 : nb(d.montant_ttc); if (await ecrire(sb.from('depenses').update({ montant_paye: p }).eq('id', d.id))) await depenses.reload(); };
+  async function ajouter(e) {
+    const formEl = e.currentTarget, f = lireForm(e);
+    const qte = num(f.get('quantite')), pu = num(f.get('prix_unitaire'));
+    const montant = str(f.get('montant_ttc')) ? num(f.get('montant_ttc')) : qte * pu;
+    if (await ecrire(sb.from('depenses').insert({
+      chantier_id: chantierId || String(f.get('chantier_id')), categorie: String(f.get('categorie')), libelle: String(f.get('libelle')), fournisseur_id: str(f.get('fournisseur_id')),
+      numero_facture: str(f.get('numero_facture')), date: String(f.get('date')), quantite: qte, prix_unitaire: pu, montant_ttc: montant, montant_paye: f.get('paye') ? montant : 0, etat: 'Sûr',
+    }))) { formEl.reset(); await depenses.reload(); }
+  }
+  const excel = () => exporterExcel('Achats', [['Achats', [['Date', 'Chantier', 'Fournisseur', 'Produit', 'Catégorie', 'Quantité', 'Prix unitaire', 'Montant (DH)', 'Payé (DH)', 'N° facture'],
+    ...vis.map((d) => [dateFr(d.date), nomC(d.chantier_id), nomF(d.fournisseur_id), d.libelle, d.categorie, d.quantite ?? '', d.prix_unitaire ?? '', nb(d.montant_ttc), nb(d.montant_paye), d.numero_facture ?? ''])]]]);
+
+  return html`
+    <div class="entete">
+      <div>${chantierId ? html`<h2 style=${{ fontSize: '20px' }}>🛒 Achats & produits du chantier</h2>` : html`<h1>🛒 Achats de produits et matières premières</h1>`}
+        <div class="sous-titre">Chaque achat est lié à un chantier et à un fournisseur</div></div>
+      <div class="rangee no-print">
+        <button type="button" class="btn secondaire" onClick=${excel}>⬇️ Excel</button>
+        <button type="button" class="btn" onClick=${() => setForm(!form)}>${form ? 'Fermer' : '+ Nouvel achat'}</button>
+      </div>
+    </div>
+    ${form && html`<section class="carte"><div class="corps">
+      <form class="formulaire" onSubmit=${ajouter}>
+        ${!chantierId && html`<${Champ} id="a-ch" label="Chantier"><select id="a-ch" name="chantier_id" required><option value="" disabled selected>Choisir…</option>${chantiers.rows.map((c) => html`<option value=${c.id}>${nomC(c.id)}</option>`)}</select></${Champ}>`}
+        <${Champ} id="a-f" label="Fournisseur"><select id="a-f" name="fournisseur_id" required><option value="" disabled selected>Choisir…</option>${fournisseurs.rows.map((f) => html`<option value=${f.id}>${f.nom}</option>`)}</select></${Champ}>
+        <${Champ} id="a-l" label="Produit" large><input id="a-l" name="libelle" required placeholder="Ex. SACS CIMENT 45" /></${Champ}>
+        <${Champ} id="a-c" label="Catégorie"><select id="a-c" name="categorie">${cats.liste.map((c) => html`<option value=${c.nom} selected=${c.nom === 'Matériaux'}>${c.icone} ${c.nom}</option>`)}</select></${Champ}>
+        <${Champ} id="a-q" label="Quantité"><input id="a-q" name="quantite" inputmode="decimal" required /></${Champ}>
+        <${Champ} id="a-pu" label="Prix unitaire (DH)"><input id="a-pu" name="prix_unitaire" inputmode="decimal" required /></${Champ}>
+        <${Champ} id="a-m" label="Montant (DH)"><input id="a-m" name="montant_ttc" inputmode="decimal" placeholder="vide = quantité × prix" /></${Champ}>
+        <${Champ} id="a-d" label="Date"><input id="a-d" name="date" type="date" required value=${today()} /></${Champ}>
+        <${Champ} id="a-n" label="N° facture / bon"><input id="a-n" name="numero_facture" /></${Champ}>
+        <div class="champ"><label style=${{ display: 'flex', gap: '8px', alignItems: 'center', minHeight: '40px' }}><input type="checkbox" name="paye" /> Déjà payé</label></div>
+        <div><button class="btn" type="submit">+ Ajouter</button></div>
+      </form>
+      ${fournisseurs.rows.length === 0 && html`<div class="discret" style=${{ marginTop: '12px' }}>Ajoutez d'abord vos fournisseurs dans le menu « Fournisseurs ».</div>`}
+    </div></section>`}
+    <div class="cote">
+      <section class="carte">
+        <div class="tete"><h2>Situation par fournisseur</h2></div>
+        <div class="defile"><table>
+          <thead><tr><th>Fournisseur</th><th class="d">Acheté</th><th class="d">Reste dû</th></tr></thead>
+          <tbody>
+            ${situation.map((s) => html`<tr class="cliquable" onClick=${() => setFFo(fFo === s.f.id ? 'Tous' : s.f.id)} style=${fFo === s.f.id ? { outline: '2px solid var(--accent)' } : null}>
+              <td class="fort">${s.f.nom}</td><td class="d">${dh(s.achete)}</td><td class="d fort" style=${{ color: s.reste > 0.5 ? 'var(--risque)' : 'var(--ok)' }}>${dh(s.reste)}</td></tr>`)}
+            <tr class="total"><td>Total</td><td class="d">${dh(tot.achete)}</td><td class="d" style=${{ color: tot.reste > 0.5 ? 'var(--risque)' : null }}>${dh(tot.reste)}</td></tr>
+          </tbody>
+        </table>${situation.length === 0 && html`<div class="vide">Aucun achat pour l'instant.</div>`}</div>
+        ${chequesFo.length > 0 && html`<div class="corps" style=${{ borderTop: '1px solid var(--bord)' }}>
+          <div class="discret" style=${{ marginBottom: '6px' }}>Paiements ${nomF(fFo)}</div>
+          ${chequesFo.map((x) => html`<div class="ligne-liste"><span>Chèque ${x.banque ?? ''} ${x.numero} · ${dh(x.montant)} DH</span><${Badge} statut=${x.statut} /></div>`)}
+        </div>`}
+      </section>
+      <section class="carte">
+        <div class="tete">
+          <div class="rangee">
+            ${!chantierId && html`<select aria-label="Chantier" style=${{ width: 'auto' }} onChange=${(e) => setFCh(e.target.value)}><option value="Tous">Chantier : tous</option>${chantiers.rows.map((c) => html`<option value=${c.id} selected=${c.id === fCh}>${nomC(c.id)}</option>`)}</select>`}
+            <select aria-label="Fournisseur" style=${{ width: 'auto' }} value=${fFo} onChange=${(e) => setFFo(e.target.value)}><option value="Tous" selected=${fFo === 'Tous'}>Fournisseur : tous</option>${fournisseurs.rows.map((f) => html`<option value=${f.id} selected=${f.id === fFo}>${f.nom}</option>`)}</select>
+            <select aria-label="Catégorie" style=${{ width: 'auto' }} onChange=${(e) => setFCat(e.target.value)}><option value="Toutes">Catégorie : toutes</option>${cats.liste.map((c) => html`<option value=${c.nom}>${c.nom}</option>`)}</select>
+            <input type="search" aria-label="Chercher un produit" placeholder="🔍 Chercher un produit" style=${{ width: '200px' }} value=${cherche} onInput=${(e) => setCherche(e.target.value)} />
+          </div>
+          <span class="discret">${vis.length} achat(s) · ${dh(vis.reduce((a, d) => a + nb(d.montant_ttc), 0))} DH</span>
+        </div>
+        <div class="defile"><table style=${{ minWidth: '860px' }}>
+          <thead><tr><th>Date</th>${!chantierId && html`<th>Chantier</th>`}<th>Fournisseur</th><th>Produit</th><th>Catégorie</th><th class="d">Qté</th><th class="d">Prix unit.</th><th class="d">Montant</th><th>Payé ?</th><th></th></tr></thead>
+          <tbody>${vis.slice(0, 200).map((d) => { const p = nb(d.montant_paye), m = nb(d.montant_ttc); const st = p >= m - 0.5 ? ['Oui', 'b-ok'] : p > 0 ? ['Partiel', 'b-alerte'] : ['Non', 'b-risque']; return html`
+            <tr key=${d.id}>
+              <td style=${{ whiteSpace: 'nowrap' }}>${dateFr(d.date)}</td>${!chantierId && html`<td>${nomC(d.chantier_id)}</td>`}<td>${nomF(d.fournisseur_id)}</td>
+              <td>${d.libelle}</td><td>${d.categorie}</td><td class="d">${d.quantite ?? ''}</td><td class="d">${d.prix_unitaire !== null && d.prix_unitaire !== undefined ? dh(d.prix_unitaire) : ''}</td>
+              <td class="d fort">${dh(m)}</td>
+              <td><button type="button" title="Cliquer pour changer" class=${'badge clic ' + st[1]} onClick=${() => basculerPaye(d)}>${st[0]}</button></td>
+              <td><${BtnSuppr} label=${d.libelle} onClick=${() => supprimer('depenses', d.id, 'Supprimer cet achat ?', depenses.reload)} /></td>
+            </tr>`; })}</tbody>
+        </table>
+        ${vis.length > 200 && html`<div class="vide">Seuls les 200 premiers achats sont affichés : utilisez les filtres.</div>`}
+        ${vis.length === 0 && html`<div class="vide">Aucun achat.</div>`}</div>
+      </section>
+    </div>`;
+}
+
+// ---------- Toutes les cautions ----------
+function ToutesCautions() {
+  const cautions = useTable('cautions', null, { col: 'date_echeance' });
+  const chantiers = useTable('chantiers', null, { col: 'intitule' });
+  const nomC = (id) => { const c = chantiers.rows.find((x) => x.id === id); return c ? (c.numero_marche ? 'N°' + c.numero_marche + ' – ' : '') + c.intitule : ''; };
+  const actives = cautions.rows.filter((x) => x.statut !== 'Restituée');
+  const aRecup = cautions.rows.filter((x) => x.statut === 'À restituer');
+  return html`
+    <div class="entete"><div><h1>🛡️ Cautions</h1><div class="sous-titre">Toutes les cautions de tous les marchés. Pour en ajouter une, ouvrez le dossier du chantier › onglet « Caution ».</div></div></div>
+    <div class="tuiles">
+      <${Tuile} l="Cautions bloquées" v=${dh(actives.reduce((a, x) => a + nb(x.montant), 0))} couleur="var(--alerte)" s=${actives.length + ' caution(s)'} />
+      <${Tuile} l="À récupérer" v=${dh(aRecup.reduce((a, x) => a + nb(x.montant), 0))} s=${aRecup.length + ' caution(s)'} />
+      <${Tuile} l="Frais bancaires" v=${dh(cautions.rows.reduce((a, x) => a + nb(x.frais), 0))} s="DH" />
+    </div>
+    <section class="carte"><div class="defile"><table style=${{ minWidth: '900px' }}>
+      <thead><tr><th>Marché</th><th>Type</th><th>Banque</th><th>N°</th><th class="d">Montant</th><th>Émise le</th><th>Échéance</th><th>Statut</th></tr></thead>
+      <tbody>${cautions.rows.map((x) => html`<tr key=${x.id}>
+        <td><a href=${'#/chantier/' + x.chantier_id} class="fort" style=${{ color: 'var(--texte)' }}>${nomC(x.chantier_id)}</a></td><td>${x.type}</td><td>${x.banque}</td><td class="discret">${x.numero}</td>
+        <td class="d fort">${dh(x.montant)}</td><td>${dateFr(x.date_emission)}</td><td>${dateFr(x.date_echeance)}</td>
+        <td style=${{ width: '150px' }}><select aria-label=${'Statut caution ' + x.type} value=${x.statut} onChange=${async (e) => { if (await ecrire(sb.from('cautions').update({ statut: e.target.value }).eq('id', x.id))) await cautions.reload(); }}>${STATUTS_CAUTION.map((s) => html`<option value=${s} selected=${s === x.statut}>${s}</option>`)}</select></td>
+      </tr>`)}</tbody>
+    </table>${cautions.rows.length === 0 && !cautions.loading && html`<div class="vide">Aucune caution.</div>`}</div></section>`;
 }
 
 // ---------- BPU ----------
@@ -700,60 +1001,6 @@ function Decomptes({ c, rows, reload }) {
           <${Champ} id="d-m" label="Montant de ce décompte TTC (DH)"><input id="d-m" name="montant_ttc" inputmode="decimal" required /></${Champ}>
           <div><button class="btn" type="submit">+ Ajouter le décompte</button></div>
         </form>
-      </div>
-    </section>`;
-}
-
-// ---------- Dépenses ----------
-function Depenses({ chantierId, rows, fournisseurs, reload }) {
-  const [filtre, setFiltre] = useState('Toutes');
-  const vis = (filtre === 'Toutes' ? rows : rows.filter((d) => d.categorie === filtre)).slice()
-    .sort((x, y) => (y.date || '').localeCompare(x.date || '') || (x.numero_facture || '').localeCompare(y.numero_facture || '') || (x.libelle || '').localeCompare(y.libelle || '', 'fr', { numeric: true }));
-  const nomF = (id) => fournisseurs.find((f) => f.id === id)?.nom ?? '';
-  async function ajouter(e) {
-    const form = e.currentTarget, f = lireForm(e);
-    const montant = num(f.get('montant_ttc'));
-    if (await ecrire(sb.from('depenses').insert({
-      chantier_id: chantierId, categorie: String(f.get('categorie')), libelle: String(f.get('libelle')), fournisseur_id: str(f.get('fournisseur_id')),
-      numero_facture: str(f.get('numero_facture')), date: String(f.get('date')), montant_ttc: montant, montant_paye: f.get('paye') ? montant : num(f.get('montant_paye')),
-    }))) { form.reset(); await reload(); }
-  }
-  return html`
-    <section class="carte">
-      <div class="tete"><h2>Ajouter une dépense</h2></div>
-      <div class="corps">
-        <form class="formulaire" onSubmit=${ajouter}>
-          <${Champ} id="e-c" label="Catégorie"><select id="e-c" name="categorie">${CATEGORIES_DEPENSE.map((c) => html`<option value=${c}>${c}</option>`)}</select></${Champ}>
-          <${Champ} id="e-l" label="Libellé" large><input id="e-l" name="libelle" required placeholder="Ex. Gravette 15/25, 120 m³" /></${Champ}>
-          <${Champ} id="e-f" label="Fournisseur"><select id="e-f" name="fournisseur_id"><option value="">—</option>${fournisseurs.map((f) => html`<option value=${f.id}>${f.nom}</option>`)}</select></${Champ}>
-          <${Champ} id="e-n" label="N° facture / bon"><input id="e-n" name="numero_facture" /></${Champ}>
-          <${Champ} id="e-d" label="Date"><input id="e-d" name="date" type="date" required value=${today()} /></${Champ}>
-          <${Champ} id="e-m" label="Montant TTC (DH)"><input id="e-m" name="montant_ttc" inputmode="decimal" required /></${Champ}>
-          <${Champ} id="e-p" label="Déjà payé (DH)"><input id="e-p" name="montant_paye" inputmode="decimal" value="0" /></${Champ}>
-          <div class="champ"><label style=${{ display: 'flex', gap: '8px', alignItems: 'center', minHeight: '40px' }}><input type="checkbox" name="paye" /> Payé en totalité</label></div>
-          <div><button class="btn" type="submit">+ Ajouter</button></div>
-        </form>
-        ${fournisseurs.length === 0 && html`<div class="discret" style=${{ marginTop: '12px' }}>Astuce : ajoutez vos fournisseurs dans le menu « Fournisseurs » pour suivre ce que vous leur devez.</div>`}
-      </div>
-    </section>
-    <section class="carte">
-      <div class="tete">
-        <h2>Dépenses du chantier <span class="discret" style=${{ fontWeight: 400 }}>· ${dh(vis.reduce((a, d) => a + nb(d.montant_ttc), 0))} DH</span></h2>
-        <div class="rangee" role="group" aria-label="Filtrer par catégorie">${['Toutes', ...CATEGORIES_DEPENSE].map((c) => html`<button type="button" class="pilule" aria-pressed=${String(filtre === c)} onClick=${() => setFiltre(c)}>${c}</button>`)}</div>
-      </div>
-      <div class="defile">
-        <table style=${{ minWidth: '900px' }}>
-          <thead><tr><th>Date</th><th>Catégorie</th><th>Libellé</th><th>Fournisseur</th><th>Facture</th><th class="d">Montant TTC</th><th class="d">Payé</th><th class="d">Reste</th><th></th></tr></thead>
-          <tbody>${vis.map((d) => html`
-            <tr key=${d.id}>
-              <td>${dateFr(d.date)}</td><td>${d.categorie}</td><td>${d.libelle}</td><td>${nomF(d.fournisseur_id)}</td><td class="discret">${d.numero_facture}</td>
-              <td class="d fort">${dh(d.montant_ttc)}</td>
-              <td class="d" style=${{ width: '130px' }}><input aria-label=${'Montant payé ' + d.libelle} inputmode="decimal" value=${d.montant_paye} style=${{ textAlign: 'right' }} onBlur=${async (e) => { const v = num(e.target.value); if (v !== nb(d.montant_paye) && await ecrire(sb.from('depenses').update({ montant_paye: v }).eq('id', d.id))) await reload(); }} /></td>
-              <td class="d" style=${{ color: nb(d.montant_ttc) - nb(d.montant_paye) > 0 ? 'var(--alerte)' : null }}>${dh(nb(d.montant_ttc) - nb(d.montant_paye))}</td>
-              <td><${BtnSuppr} label=${d.libelle} onClick=${() => supprimer('depenses', d.id, 'Supprimer cette dépense ?', reload)} /></td>
-            </tr>`)}</tbody>
-        </table>
-        ${vis.length === 0 && html`<div class="vide">Aucune dépense.</div>`}
       </div>
     </section>`;
 }
@@ -998,6 +1245,9 @@ function App() {
   if (!session) return html`<${Login} />`;
   let page;
   if (route.startsWith('/chantier/')) page = html`<${Fiche} key=${route} id=${route.slice('/chantier/'.length)} />`;
+  else if (route === '/chantiers') page = html`<${ListeChantiers} />`;
+  else if (route === '/achats') page = html`<${Achats} key="tous" />`;
+  else if (route === '/cautions') page = html`<${ToutesCautions} />`;
   else if (route === '/nouveau') page = html`<${NouveauChantier} />`;
   else if (route === '/tresorerie') page = html`<${Tresorerie} />`;
   else if (route === '/fournisseurs') page = html`<${Fournisseurs} />`;
